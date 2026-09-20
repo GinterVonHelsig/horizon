@@ -2,7 +2,7 @@
 # Fresh network/mount/PID namespaces: never connect to host PostgreSQL or trust files.
 set -euo pipefail
 if [[ ${1:-} != --inside ]]; then
-  exec unshare --mount --net --pid --fork --mount-proc bash "$0" --inside "$@"
+  exec unshare --mount --net --pid --cgroup --fork --mount-proc bash "$0" --inside "$@"
 fi
 shift
 mount --make-rprivate /
