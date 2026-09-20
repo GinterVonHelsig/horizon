@@ -195,12 +195,18 @@ def test_killed_provider_fencing_and_bounded_recovery(scenario, artifact_root, d
     assert len(list(artifact_root.rglob("hello.txt"))) == 1
 
 
-def test_paused_provider_does_not_execute(scenario, artifact_root):
+def test_paused_provider_does_not_execute(scenario, artifact_root, db_url):
     parent, _, _, _ = scenario
     parent.persist_goal_state("disposable-provider", "WAITING_OPERATOR")
     worker, author, review = make_worker(scenario, artifact_root)
     assert worker.run_once("disposable-provider", "paused") is None
-    assert parent._repo.controller_state("disposable-provider")["scheduling_enabled"] is False
+    assert parent.goal_state("disposable-provider") == "WAITING_OPERATOR"
+    restarted = ParentController(db_url, artifact_root=artifact_root, lease_holder=False)
+    try:
+        assert restarted.goal_state("disposable-provider") == "WAITING_OPERATOR"
+        assert restarted.claim_next("disposable-provider", "restart") is None
+    finally:
+        restarted.close()
     assert author.calls == review.calls == 0
 
 
@@ -213,3 +219,22 @@ def test_bounded_profile_has_two_claims_one_execution_and_unknown_profiles_fail(
     validate_request(request)
     with pytest.raises(ValueError, match="unsupported_delivery_profile"):
         build_handoff_request(**args, handoff_context={**context, "delivery_profile": "unknown"})
+
+
+@pytest.mark.parametrize("cause", ["deadline", "cancel"])
+def test_budget_or_cancellation_stops_before_review(scenario, artifact_root, cause):
+    worker, author, review = make_worker(scenario, artifact_root)
+    provider = worker._adapters["gateway-delivery"]
+    execute = provider.execute
+    def expire_after_execution(request):
+        result = execute(request)
+        if cause == "deadline":
+            provider._started -= 601
+        else:
+            provider.cancel()
+        return result
+    provider.execute = expire_after_execution
+    result = worker.run_once("disposable-provider", "deadline-test")
+    assert result.terminal_state.startswith("blocked")
+    assert author.calls == 1 and review.calls == 0
+    assert not list(artifact_root.rglob("handoff-product.json"))

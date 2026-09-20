@@ -85,8 +85,10 @@ class BoundedDeliveryAdapter:
         self.adapter_id = executor.adapter_id
         self.provider, self.model = executor.provider, executor.model
         self._started = None
+        self._cancelled = False
 
     def cancel(self):
+        self._cancelled = True
         self.executor.cancel()
 
     def resume(self, request, session_id):
@@ -114,6 +116,8 @@ class BoundedDeliveryAdapter:
         return path
 
     def remaining_seconds(self):
+        if self._cancelled:
+            raise ValueError("delivery cancelled; reconciliation required")
         if self._started is None:
             raise ValueError("delivery did not start")
         remaining = 600 - (time.monotonic() - self._started)
