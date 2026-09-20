@@ -140,11 +140,11 @@ rtk proxy bash scripts/test-recovery-isolated.sh -q --tb=short \
   controller/test_subworkflow_handoff_integration.py \
   tests/test_worker.py tests/test_worker_cleanup.py \
   tests/test_worker_integration.py tests/test_worker_service.py \
-  tests/test_goal_submitter.py -k 'not all_six'
+  tests/test_goal_submitter.py
 ```
 
-The omitted legacy test requires /home/trading/prompts/p0-top-delivery-all-six-20260823.md,
-which is outside this repair. The new submission tests use self-contained fixtures.
+The legacy six-workstream test now uses a self-contained fixture instead of an
+external /home/trading prompt. Its six-task/dependency assertions are unchanged.
 The new CI job runs the PostgreSQL acceptance and both provider suites in isolation.
 The existing focused CI command is preserved in .github/workflows/ci.yml.
 

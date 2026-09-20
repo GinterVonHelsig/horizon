@@ -11,7 +11,7 @@ import pytest
 from goal_submitter import GoalSubmitter, TaskRoutingSnapshot
 from prompt_ingest import parse_prompt_file
 
-ALL_SIX_PROMPT = Path("/home/trading/prompts/p0-top-delivery-all-six-20260823.md")
+ALL_SIX_PROMPT = Path(__file__).parent / "fixtures" / "six-workstreams.md"
 
 
 @dataclass
