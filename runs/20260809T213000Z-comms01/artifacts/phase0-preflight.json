@@ -1,0 +1,22 @@
+{
+  "run_id": "20260809T213000Z-comms01",
+  "timestamp_utc": "2026-08-09T21:30:00Z",
+  "checks": {
+    "top_delivery_prompt_read": true,
+    "age_identity_valid": true,
+    "public_recipient_valid": true,
+    "encrypted_synology_archive_verified": true,
+    "daily_archive_timer_active": true,
+    "production_mutation": false,
+    "broker_mutation": false,
+    "network_mutation": false,
+    "comms01_dns_or_inventory_entry": false,
+    "proxmox_management_tool_available_on_current_host": false
+  },
+  "finding": {
+    "severity": "hard-target-discovery",
+    "message": "No verified comms-01 VM or home05 Proxmox management endpoint is discoverable from this host.",
+    "safe_action": "Preserve evidence and wait for an approved management path or provision from a verified Proxmox controller.",
+    "forbidden_action": "Do not guess an IP, scan broadly, or create a VM on an unverified host."
+  }
+}

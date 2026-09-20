@@ -1,0 +1,7 @@
+[Unit]
+Description=Encrypted TOP-DELIVERY daily archive
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/root/TOP-DELIVERY/scripts/archive-top-delivery.sh

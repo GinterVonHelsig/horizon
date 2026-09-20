@@ -1,0 +1,26 @@
+[Unit]
+Description=TOP-DELIVERY local Hermes-compatible command adapter
+After=top-delivery-controller.service
+Requires=top-delivery-controller.service
+
+[Service]
+Type=simple
+User=topdelivery
+Group=topdelivery
+EnvironmentFile=/etc/top-delivery/hermes.env
+WorkingDirectory=/opt/top-delivery/control-plane
+RuntimeDirectory=top-delivery-hermes
+RuntimeDirectoryMode=0750
+ExecStart=/usr/bin/python3 /opt/top-delivery/control-plane/hermes_adapter.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/top-delivery-hermes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

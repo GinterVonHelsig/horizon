@@ -1,0 +1,23 @@
+[Unit]
+Description=TOP-DELIVERY read-only controller
+After=local-fs.target
+
+[Service]
+Type=simple
+User=topdelivery
+Group=topdelivery
+ExecStart=/usr/bin/python3 /opt/top-delivery/controller/controller_socket.py
+EnvironmentFile=-/etc/top-delivery/controller.env
+NoNewPrivileges=true
+PrivateNetwork=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/top-delivery/root
+ReadWritePaths=/var/lib/top-delivery
+RuntimeDirectory=top-delivery
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

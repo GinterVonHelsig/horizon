@@ -1,0 +1,16 @@
+{
+  "run_id": "20260810T181326Z-comms01-ux-repair",
+  "cursor_chat_id": "resumed-current-worktree-session",
+  "branch": "sol/20260810T181326Z-comms01-ux-repair",
+  "worktree": "/root/.codex/sol-worktrees/20260810T181326Z-comms01-ux-repair",
+  "commits": ["5cef52ec66bcf10f9b0c00c2711c1f24618328c3"],
+  "files_changed": [
+    "controller/controller.py",
+    "control-plane/signal_adapter.py",
+    "control-plane/test_signal_adapter.py",
+    "control-plane/tests/test_controller.py"
+  ],
+  "tests": "45 passed",
+  "deployment_target": "comms-01",
+  "deployment_status": "runtime files deployed with verified hashes; no PR or production deployment"
+}

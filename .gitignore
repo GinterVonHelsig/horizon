@@ -1,0 +1,15 @@
+# Never version secrets, credentials, runtime state, or raw operational data.
+*.env
+*.key
+*.pem
+*credential*
+*secret*
+*token*
+!controller/migrations/versions/*token*.py
+*.log
+.cache/
+.state/
+archive-staging/
+exports/
+__pycache__/
+*.pyc

@@ -1,0 +1,34 @@
+{
+  "project": "TOP-DELIVERY",
+  "created_at": "2026-08-09T00:00:00Z",
+  "updated_at": "2026-09-07T00:00:00Z",
+  "status": "walk-away-running-in-lab",
+  "product_intent": "give-a-goal-walk-away-come-back-to-evidence",
+  "coordinator": "gateway-delivery",
+  "selected_child_name": "longspan",
+  "retired_coordinator_names": ["terra-delivery", "sol-delivery"],
+  "drop_in_any_project": "in-flight",
+  "harness_agnostic": "in-flight",
+  "model_agnostic": "in-flight",
+  "model_picker_ui": "in-progress",
+  "consumer_grade_install": "not-started",
+  "seats": {
+    "coordinator": "user-selectable-with-fallbacks",
+    "reviewer_1": "user-selectable-with-fallbacks",
+    "reviewer_2": "user-selectable-with-fallbacks",
+    "coder": "user-selectable-with-fallbacks",
+    "auditor": "user-selectable-with-fallbacks",
+    "local_helper": "optional-bounded-mechanical-only"
+  },
+  "live_lab_coding_lane": {
+    "primary": "cursor-composer",
+    "next_on_same_picker": "cursor-grok",
+    "note": "lab default until the model-picker UI ships; not a product brand pin"
+  },
+  "routing_file": "architecture/model-routing.yaml",
+  "artifacts": [
+    "README.md",
+    "LICENSE",
+    "architecture/model-routing.yaml"
+  ]
+}

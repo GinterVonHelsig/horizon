@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "generated_for": "comms-01",
+  "generated_from": "sha256 of the exact executable bytes on the reviewed Comms-01 host",
+  "executables": {
+    "/usr/lib/postgresql/17/bin/pg_restore": {
+      "sha256": "6a5c329542ccbb58957edbc8c0aa08e103cb32f8257c1f2d3b8dad19ce947692",
+      "sha256_alternates": [
+        "aea2ace00ce663eb3d45004bdcfbc0e7d79e2e0f89663cdcba404f63eb483ecb"
+      ],
+      "package": "postgresql-client-17",
+      "package_version": "17.11-0+deb13u1"
+    },
+    "/usr/bin/systemctl": {
+      "sha256": "848c70d7e2c2f43f4f93287897ac8946e8eda45e7daa5f2975d9728071856b1a",
+      "sha256_alternates": [
+        "66f1d45d82f18e57d1fe582b263c3d92d59a90640cfa836400d1206e24c21e85"
+      ],
+      "package": "systemd",
+      "package_version": "257.13-1~deb13u1"
+    }
+  }
+}

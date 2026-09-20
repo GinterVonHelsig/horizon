@@ -1,0 +1,21 @@
+[Unit]
+Description=TOP-DELIVERY Signal CLI daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=topdelivery
+Group=topdelivery
+ExecStart=/usr/local/bin/signal-cli --config /var/lib/signal-cli -a +17325889188 daemon --http 127.0.0.1:8080 --receive-mode manual --ignore-attachments --ignore-stories --ignore-avatars --ignore-stickers
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/signal-cli
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

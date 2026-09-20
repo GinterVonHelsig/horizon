@@ -1,0 +1,17 @@
+# Operator-approved bounded Comms-01 SSH transport (mirror comms02_config).
+# Install on PROD as /etc/top-delivery/ssh/comms01_config with a pinned
+# UserKnownHostsFile; never ssh-keyscan into an unreviewed known_hosts file.
+Host comms-01
+    HostName 192.168.0.91
+    User root
+    IdentityFile /root/.ssh/id_ed25519
+    IdentitiesOnly yes
+    UserKnownHostsFile /etc/top-delivery/ssh/comms01_known_hosts
+    GlobalKnownHostsFile /dev/null
+    StrictHostKeyChecking yes
+    BatchMode yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    ConnectTimeout 5
+    ServerAliveInterval 15
+    ServerAliveCountMax 2

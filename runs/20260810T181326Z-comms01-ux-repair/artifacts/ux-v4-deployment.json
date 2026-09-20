@@ -1,0 +1,57 @@
+{
+  "run_id": "20260810T181326Z-comms01-ux-repair",
+  "commit": "78d16394ec0ad8de9de73a4de609ae614a5e72ca",
+  "scope": "Signal command vocabulary and 2FA prompt usability",
+  "deployed_host": "comms-01",
+  "deployed_paths": [
+    "/opt/top-delivery/control-plane/signal_adapter.py",
+    "/opt/top-delivery/controller/controller.py"
+  ],
+  "sha256": {
+    "signal_adapter": "6b6418f56cf73740894f942e5289275cda70b739a0e93c418b87addf787647ff",
+    "controller": "c6b029c905abf7a576bb86a291f04d1927af7a14f77c5734bda8392346be1b54"
+  },
+  "pre_change_backup": {
+    "directory": "/var/lib/top-delivery/backups/comms01-signal-ux-v4-pre-20260810T190124Z",
+    "signal_adapter_sha256": "0da05cfbf3b93ef40519088ebbd8aaa785dcf2f1d02371660e72f79ae089f35d",
+    "controller_sha256": "99760bfbe644cee0e9dddb66e5e038cd68bdad87e8a6266bc7c7c4813e1ea526"
+  },
+  "operator_protocol": {
+    "preferred_queue_command": "next",
+    "legacy_queue_command_accepted": true,
+    "authorize_command": "authorize CODE",
+    "challenge_template": "Reply exactly: authorize CODE",
+    "code_replacement_instruction_removed": true,
+    "commands_output": "comma-separated single line",
+    "run_labels_hide_timestamp_prefix": true
+  },
+  "validation": {
+    "focused_tests": "56 passed",
+    "py_compile": "passed",
+    "diff_check": "passed",
+    "remote_hash_match": true,
+    "services": {
+      "top-delivery-controller.service": {
+        "active": true,
+        "nrestarts_after_change": 0
+      },
+      "top-delivery-signal-adapter.service": {
+        "active": true,
+        "nrestarts_after_change": 0
+      }
+    },
+    "controller_untouched_broker_or_ledger": true
+  },
+  "acceptance": {
+    "next_command": "accepted by adapter and creates the same action-bound challenge as the legacy alias",
+    "legacy_queue_alias": "accepted for compatibility and never displayed in formatted output",
+    "commands": "returns status, architecture-summary, active-runs, latest-evidence, next-step, artifact lookup, next, authorize, commands on one comma-separated line",
+    "authorization_prompt": "one-line Reply exactly: authorize CODE; no replacement sentence",
+    "status_next_action": "legacy queue-next-prompt values normalize to Next: next",
+    "production_trading_impact": "none"
+  },
+  "residuals": [
+    "The broader Comms-01 live 2FA identity and parent-scheduler capability remains a separate outcome.",
+    "The legacy queue-next-prompt input alias remains accepted but is intentionally hidden from operator-facing output."
+  ]
+}

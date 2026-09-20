@@ -1,0 +1,5 @@
+# Installed by the Comms-01 release unit before any restore operation.
+# The code intentionally fails closed if this root is absent or has weaker
+# ownership/mode; it never creates a root-owned restore-fence authority itself.
+d /var/lib/top-delivery 0700 root root -
+d /var/lib/top-delivery/restore-fences 0700 root root -

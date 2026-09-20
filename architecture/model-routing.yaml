@@ -1,0 +1,741 @@
+version: 2
+month: 2026-08
+coordinator:
+  name: gateway-delivery
+  provider: openai
+  base_url: https://openrouter.ai/api/v1
+  model: gpt-5.6-luna
+  effort: medium
+  fallbacks:
+  - provider: openrouter
+    model: z-ai/glm-5.3-flash
+    effort: high
+  - provider: openrouter
+    model: google/gemini-3.8-flash
+    effort: high
+review_sequence:
+  required_order:
+  - '1.5'
+  - '1.6'
+  invoke_next_only_when:
+    '1.5':
+    - pass
+    - pass_with_minors
+  stop_on:
+  - transport_failure
+  - timeout
+  - malformed_structured_output
+  - reject
+  - reject_with_critical
+  preserve_findings: true
+local_coding_assistant:
+  role: bounded-mechanical-coding-and-project-communication
+  provider: comms-01-local
+  transport: ssh-to-loopback-ollama-openai-compatible
+  host: comms-01
+  endpoint: http://127.0.0.1:11434/v1
+  model: hf.co/unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-Q4_K_M.gguf
+  model_repository: unsloth/Qwen3.8-27B-GGUF
+  revision: 603ce507f0fd (config sha256:0aff69d6c4eaf5d2885c225e9110e7a1fdc21aa6ac067d1a8cfed9e81dafaf32)
+  max_context_tokens: 8192
+  max_output_tokens: 1600
+  use_for:
+  - artifact-and-log-summarization
+  - test-failure-classification
+  - review-packet-compression
+  - documentation-and-status-updates
+  - simple-test-generation
+  - browser-dom-and-screenshot-inspection
+  - evidence-indexing
+  - bounded-mechanical-refactors
+  prohibited:
+  - authority-or-2fa-decisions
+  - acceptance-criteria-changes
+  - migration-or-production-database-actions
+  - broker-or-ledger-actions
+  - release-approval
+  - final-adversarial-review
+  escalation:
+    provider: cursor
+    model: composer-latest
+    reason: non-mechanical-or-ambiguous-code-change
+  rollback:
+  - provider: cursor
+    model: composer-latest
+    reason: local-model-capacity-or-quality-failure
+  - provider: comms-01-local
+    model: qwen3-coder:30b
+    revision: 06c1097efce0
+    action: repull-and-validate-before-use
+    reason: temporary-local-model-swap
+  - provider: comms-01-local
+    model: qwen2.5-coder-14b-awq
+    revision: eb3172f06a6d6b3a15f08947b0668d782e4d2d2c
+    action: restore-vllm-stack-and-validate-before-use
+    reason: documented-prior-local-stack
+  required_evidence:
+  - exact_model_and_revision
+  - prompt_digest
+  - response_digest
+  - changed_file_manifest
+  - focused_test_result
+  - independent_review_after_use
+local_executor_team:
+  name: comms-local-coding-team
+  coordinator: gateway-delivery
+  qwen_lane:
+    route_ref: local_coding_assistant
+    host: comms-01
+    ip: 192.168.0.91
+    model: hf.co/unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-Q4_K_M.gguf
+    revision: 603ce507f0fd
+    responsibility: evidence-analysis-task-packets-documentation-browser-and-test-triage
+  kat_lane:
+    provider: comms-02-local
+    transport: ssh-to-loopback-ollama-openai-compatible
+    host: comms-02
+    ip: 192.168.0.92
+    endpoint: http://127.0.0.1:11434/v1
+    model: hf.co/RemySkye/KAT-Coder-V2.5-Dev-GGUF:Q4_K_M
+    model_repository: RemySkye/KAT-Coder-V2.5-Dev-GGUF
+    revision: 685e7841abd4
+    max_context_tokens: 8192
+    max_output_tokens: 1600
+    responsibility: bounded-isolated-code-implementation-mechanical-refactors-and-focused-tests
+  protocol:
+    sequence: qwen_packet_kat_implementation_qwen_mechanical_check_gpt_sol_audit
+    shared_worktree_writes: forbidden
+    persist_each_output_before_handoff: true
+    exact_model_and_response_digests: required
+    local_failure: record_then_retry_or_escalate
+  prohibited_for_both:
+  - authority-or-2fa-decisions
+  - acceptance-criteria-changes
+  - migration-or-production-database-actions
+  - broker-ledger-or-strategy-state
+  - network-or-vm-mutation
+  - release-approval
+bounded_mechanical_policy:
+  classifier: gateway-delivery
+  default_executor: local_coding_assistant
+  coordinated_team: local_executor_team
+  team_sequence: qwen_packet_kat_implementation_qwen_mechanical_check_gpt_sol_audit
+  eligible_phases:
+  - 3A
+  - 5
+  eligible_task_classes:
+  - artifact-and-log-summarization
+  - test-failure-classification
+  - review-packet-compression
+  - documentation-and-status-updates
+  - simple-test-generation
+  - browser-dom-and-screenshot-inspection
+  - evidence-indexing
+  - bounded-mechanical-refactors
+  complex_or_ambiguous_executor: cursor-composer
+  handoff_requirements:
+  - persist_local_output_before_audit
+  - record_exact_model_revision_and_digests
+  - independent_review_after_any_source_change
+  - return_to_terra_for_acceptance_and_release
+  local_model_must_not:
+  - set_or_change_acceptance_criteria
+  - approve_its_own_output
+  - mutate_authority_or_2fa
+  - access_production_database_or_broker
+  - approve_migrations_or_releases
+top_delivery:
+  parent_manager:
+    provider: openrouter
+    model: z-ai/glm-5.3-flash
+    effort: high
+    fallbacks:
+    - provider: openrouter
+      model: google/gemini-3.8-flash
+      effort: high
+    responsibility: project-state-decomposition-priority-and-next-outcome
+  manager_draft_assistant: local_coding_assistant
+  local_executor_team: local_executor_team
+  longspan:
+    executor:
+      evidence_packet: local_executor_team.qwen_lane
+      default: local_executor_team.kat_lane
+      complex_or_ambiguous: cursor-composer
+      fresh_context_per_attempt: true
+    auditor:
+      primary:
+        provider: openai
+        model: gpt-5.6-sol
+        effort: max
+      fallbacks:
+      - provider: openrouter
+        model: x-ai/grok-4.6
+        effort: high
+      must_not_be_executor: true
+    evidence_writer: deterministic-controller
+    adoption_authority: gateway-delivery
+    self_improvement: auditor-verdict-and-terra-adoption-only
+phases:
+  '0':
+    role: preflight
+    provider: openai
+    model: gpt-5.6-sol
+    effort: max
+    fallbacks:
+    - provider: openrouter
+      model: x-ai/grok-4.6
+      effort: high
+    responsibility: authority-target-backup-provenance-and-scope-checks
+  '1':
+    role: research-and-proposal
+    provider: openai
+    model: gpt-6-astra
+    effort: high
+    fallbacks:
+    - provider: openrouter
+      model: x-ai/grok-4.6
+      effort: high
+    responsibility: objective-dependencies-and-acceptance-design
+    routing_note: operator-astra-high-assignment-20260916
+  '1.5':
+    role: adversarial-review-1
+    provider: openai
+    model: gpt-5.6-sol
+    effort: max
+    required: true
+    fallbacks:
+    - provider: antigravity
+      executable: qemu-x86_64 -cpu Haswell /opt/operator-harness/bin/agy
+      model: gemini-3.8-flash-high
+      effort: high
+      approval_mode: dangerously-skip-permissions
+      reason: qualified-local-antigravity-smoke-20260912
+    - provider: openrouter
+      model: google/gemini-3.8-flash
+      effort: high
+      reason: openrouter-fallback-after-antigravity-20260912
+    fallback_policy: try-next-configured-route-if-primary-fails
+  '1.6':
+    role: adversarial-review-2
+    provider: openai
+    model: gpt-6-astra
+    effort: medium
+    routing_note: operator-astra-high-assignment-20260916
+    required: true
+    fallbacks:
+    - provider: openrouter
+      model: x-ai/grok-4.6
+      effort: high
+      reason: astra-budget-or-availability-fallback
+    - provider: openrouter
+      model: z-ai/glm-5.3
+      effort: max
+      reason: independent-family-fallback
+    fallback_policy: try-next-configured-route-if-primary-fails
+  '1.7':
+    role: adversarial-review-3
+    provider: openai
+    model: gpt-6-astra
+    effort: max
+    enabled: true
+    qualified: true
+    required: false
+    invoke_by_default: false
+    status: conditional-escalation
+    escalation_trigger: unavailable-or-invalid-primary-review
+    preserves_substantive_findings: true
+    fallbacks:
+    - provider: cursor
+      model: gpt-5.6-sol-max
+      effort: max
+      reason: qualified-cursor-fallback-20260911
+    - provider: cursor
+      model: gpt-5.5-high
+      effort: high
+      reason: qualified-cursor-fallback-20260911
+    fallback_policy: try-next-configured-route-if-primary-fails
+  '1.8':
+    role: adversarial-review-4
+    provider: cursor
+    model: claude-fable-5-1-thinking-high
+    effort: high
+    enabled: true
+    qualified: true
+    required: false
+    invoke_by_default: false
+    status: conditional-escalation
+    escalation_trigger: unavailable-or-invalid-after-1.7-or-primary-still-rejected
+    preserves_substantive_findings: true
+    fallbacks:
+    - provider: openrouter
+      model: anthropic/claude-fable-5.1
+      effort: high
+      reason: qualified-openrouter-fallback-20260911
+    - provider: openrouter
+      model: z-ai/glm-5.3
+      effort: max
+      reason: qualified-openrouter-fallback-20260911
+    fallback_policy: try-next-configured-route-if-primary-fails
+  '1.9':
+    role: adversarial-review-5
+    provider: openrouter
+    model: qwen/qwen3.8-max
+    effort: high
+    enabled: false
+    status: disabled-placeholder
+    disabled_reason: operator-requested-temporary-disable
+    required: false
+  '2':
+    role: disposition-and-implementation-specification
+    provider: openai
+    model: gpt-6-astra
+    effort: high
+    fallbacks:
+    - provider: openrouter
+      model: x-ai/grok-4.6
+      effort: high
+    responsibility: disposition-all-findings-and-produce-implementation-spec
+    routing_note: operator-astra-high-assignment-20260916
+  3A:
+    role: code-implementation
+    provider: cursor
+    model: composer-2.5
+    harness: cursor-agent
+    account_class: subscription
+    model_selection: latest-validated-cursor-composer
+    effort: default
+    fallbacks:
+    - provider: cursor
+      model: grok-4.6
+      effort: high
+      model_selection: latest-validated-cursor-grok
+    - provider: openrouter
+      model: deepseek/deepseek-v4-flash-0731
+      effort: high
+    - provider: openai
+      model: gpt-5.6-luna
+      effort: max
+      role: last-resort-capacity
+      skip_if_ttft_exceeds_seconds: 30
+      reason: last-resort-only-not-live-synchronous
+    responsibility: isolated-worktree-scoped-code-tests-commits-and-pr
+  3B:
+    role: infrastructure-and-database-implementation
+    provider: openrouter
+    model: z-ai/glm-5.3-flash
+    effort: high
+    fallbacks:
+    - provider: openrouter
+      model: google/gemini-3.8-flash
+      effort: high
+      reason: explicit-escalation-or-budget-approved-fallback
+    - provider: openrouter
+      model: z-ai/glm-5.3
+      effort: max
+      reason: explicit-escalation-or-budget-approved-fallback
+    fallback_policy: try-next-configured-route-if-primary-fails
+    responsibility: disposable-infrastructure-database-migration-and-fencing-validation
+  '4':
+    role: independent-review
+    provider: openai
+    model: gpt-6-astra
+    effort: high
+    fallbacks:
+    - provider: openrouter
+      model: x-ai/grok-4.6
+      effort: high
+      reason: availability-only-forbidden-if-grok-authored-phase-1
+    fallback_policy: run-each-configured-reviewer-if-primary-route-fails
+    routing_note: operator-astra-high-assignment-20260916
+  '4.5':
+    role: browser-qa
+    provider: openrouter
+    model: z-ai/glm-5.3-flash
+    effort: high
+    runner: infra-db-and-qa
+    fallbacks:
+    - provider: openrouter
+      model: google/gemini-3.8-flash
+      effort: high
+      reason: explicit-escalation-or-budget-approved-fallback
+    - provider: openrouter
+      model: z-ai/glm-5.3
+      effort: max
+      reason: explicit-escalation-or-budget-approved-fallback
+    fallback_policy: try-next-configured-route-if-primary-fails
+    responsibility: authenticated-headless-browser-api-dom-console-scroll-and-runtime-path-qa
+  '5':
+    role: remediation
+    provider: cursor
+    model: composer-2.5
+    harness: cursor-agent
+    account_class: subscription
+    model_selection: latest-validated-cursor-composer
+    effort: default
+    fallbacks:
+    - provider: cursor
+      model: grok-4.6
+      effort: high
+      model_selection: latest-validated-cursor-grok
+    - provider: openrouter
+      model: deepseek/deepseek-v4-flash-0731
+      effort: high
+    - provider: openai
+      model: gpt-5.6-luna
+      effort: max
+      role: last-resort-capacity
+      skip_if_ttft_exceeds_seconds: 30
+      reason: last-resort-only-not-live-synchronous
+    responsibility: same-writer-worktree-remediation-and-revalidation
+  '6':
+    role: final-re-review
+    provider: openai
+    model: gpt-6-astra
+    effort: high
+    fallbacks:
+    - provider: openrouter
+      model: qwen/qwen3.8-max
+      effort: xhigh
+      reason: explicit-escalation-or-budget-approved-fallback
+    fallback_policy: run-each-configured-reviewer-if-primary-route-fails
+    routing_note: operator-astra-high-assignment-20260916
+  '7':
+    role: merge-deploy-verify-rollback
+    provider: cursor
+    model: composer-2.5
+    model_selection: latest-validated-cursor-composer
+    fallbacks:
+    - provider: cursor
+      model: grok-4.6
+      effort: high
+      model_selection: latest-validated-cursor-grok
+    - provider: openrouter
+      model: deepseek/deepseek-v4-flash-0731
+      effort: high
+      reason: explicit-escalation-or-budget-approved-fallback
+    - provider: openai
+      model: gpt-5.6-luna
+      effort: max
+      role: last-resort-capacity
+      skip_if_ttft_exceeds_seconds: 30
+      reason: last-resort-only-not-live-synchronous
+    release_authority: gateway-delivery
+    responsibility: exact-reviewed-merged-sha-clean-checkout-backup-deploy-verify-and-rollback
+  '7.5':
+    role: post-deployment-browser-qa
+    provider: openrouter
+    model: z-ai/glm-5.3-flash
+    effort: high
+    runner: infra-db-and-qa
+    fallbacks:
+    - provider: openrouter
+      model: google/gemini-3.8-flash
+      effort: high
+      reason: explicit-escalation-or-budget-approved-fallback
+    - provider: openrouter
+      model: z-ai/glm-5.3
+      effort: max
+      reason: explicit-escalation-or-budget-approved-fallback
+    fallback_policy: try-next-configured-route-if-primary-fails
+    responsibility: read-only-post-deployment-browser-and-runtime-acceptance
+routing_record:
+  required_fields:
+  - model
+  - harness
+  - account_class
+  - effort
+  - fallback_reason
+  primary_pools:
+    manager: openrouter-glm-flash
+    review: independent-families
+    code: cursor-subscription
+  openrouter_policy:
+    never_silent: true
+    requires_explicit_budget_approval: true
+conditional_escalation:
+  policy: invoke-only-on-unavailable-or-invalid-primary-review
+  never_erase_substantive_findings: true
+  seats:
+    '1.7':
+      trigger: unavailable-or-invalid-primary-review
+      qualified_routes_only: true
+    '1.8':
+      trigger: unavailable-or-invalid-after-1.7-or-primary-still-rejected
+      qualified_routes_only: true
+reviews:
+- phase: 1.5
+  role: adversarial-review-1
+  provider: openrouter
+  model: moonshotai/kimi-k3
+  effort: max
+  required: true
+  fallbacks:
+  - provider: cursor
+    model: kimi-k3-max
+    effort: max
+    reason: qualified-cursor-fallback-20260911
+  - provider: cursor
+    model: gemini-3.8-flash-high
+    effort: high
+    reason: qualified-cursor-fallback-20260911
+- phase: 1.6
+  role: adversarial-review-2
+  provider: openai
+  model: gpt-6-astra
+  effort: high
+  required: true
+  fallbacks:
+  - provider: openrouter
+    model: x-ai/grok-4.6
+    effort: high
+  - provider: cursor
+    model: claude-opus-5-thinking-high
+    effort: high
+  routing_note: operator-astra-high-assignment-20260916
+- phase: 1.7
+  role: adversarial-review-3
+  provider: openai
+  model: gpt-6-astra
+  effort: max
+  enabled: true
+  qualified: true
+  required: false
+  invoke_by_default: false
+  status: conditional-escalation
+  escalation_trigger: unavailable-or-invalid-primary-review
+  preserves_substantive_findings: true
+  fallbacks:
+  - provider: cursor
+    model: gpt-5.6-sol-max
+    effort: max
+    reason: qualified-cursor-fallback-20260911
+  - provider: cursor
+    model: gpt-5.5-high
+    effort: high
+    reason: qualified-cursor-fallback-20260911
+- phase: 1.8
+  role: adversarial-review-4
+  provider: cursor
+  model: claude-fable-5-1-thinking-high
+  effort: high
+  enabled: true
+  qualified: true
+  required: false
+  invoke_by_default: false
+  status: conditional-escalation
+  escalation_trigger: unavailable-or-invalid-after-1.7-or-primary-still-rejected
+  preserves_substantive_findings: true
+  fallbacks:
+  - provider: openrouter
+    model: anthropic/claude-fable-5.1
+    effort: high
+    reason: qualified-openrouter-fallback-20260911
+  - provider: openrouter
+    model: z-ai/glm-5.3
+    effort: max
+    reason: qualified-openrouter-fallback-20260911
+- phase: 1.9
+  role: adversarial-review-5
+  provider: openrouter
+  model: qwen/qwen3.8-max
+  effort: high
+  enabled: false
+  status: disabled-placeholder
+  disabled_reason: operator-requested-temporary-disable
+  required: false
+implementation:
+  code:
+    provider: cursor
+    model: composer-2.5
+    model_selection: latest-validated-cursor-composer
+    mechanical_assistant: local_coding_assistant
+    fallbacks:
+    - provider: cursor
+      model: grok-4.6
+      effort: high
+    - provider: openrouter
+      model: deepseek/deepseek-v4-flash-0731
+      effort: high
+    - provider: openai
+      model: gpt-5.6-luna
+      effort: max
+      role: last-resort-capacity
+      skip_if_ttft_exceeds_seconds: 30
+  infrastructure:
+    provider: openrouter
+    model: z-ai/glm-5.3-flash
+    effort: high
+    fallbacks:
+    - provider: openrouter
+      model: google/gemini-3.8-flash
+      effort: high
+      reason: explicit-escalation-or-budget-approved-fallback
+    - provider: openrouter
+      model: z-ai/glm-5.3
+      effort: max
+      reason: explicit-escalation-or-budget-approved-fallback
+remediation:
+  provider: cursor
+  model: composer-2.5
+  model_selection: latest-validated-cursor-composer
+  fallbacks:
+  - provider: cursor
+    model: grok-4.6
+    effort: high
+  - provider: openrouter
+    model: deepseek/deepseek-v4-flash-0731
+    effort: high
+  - provider: openai
+    model: gpt-5.6-luna
+    effort: max
+    role: last-resort-capacity
+    skip_if_ttft_exceeds_seconds: 30
+release:
+  release_authority: gateway-delivery
+  provider: cursor
+  model: composer-2.5
+  model_selection: latest-validated-cursor-composer
+  fallbacks:
+  - provider: cursor
+    model: grok-4.6
+    effort: high
+  - provider: openrouter
+    model: deepseek/deepseek-v4-flash-0731
+    effort: high
+  - provider: openai
+    model: gpt-5.6-luna
+    effort: max
+    role: last-resort-capacity
+    skip_if_ttft_exceeds_seconds: 30
+browser_qa:
+  runner: infra-db-and-qa
+  provider: openrouter
+  model: z-ai/glm-5.3-flash
+  effort: high
+  fallbacks:
+  - provider: openrouter
+    model: google/gemini-3.8-flash
+    effort: high
+    reason: explicit-escalation-or-budget-approved-fallback
+  - provider: openrouter
+    model: z-ai/glm-5.3
+    effort: max
+    reason: explicit-escalation-or-budget-approved-fallback
+fallback:
+  model: gpt-5.6-luna
+  provider: openai
+  effort: max
+  role: last-resort-capacity
+  skip_if_ttft_exceeds_seconds: 30
+  permitted_for:
+  - queueable-provider-capacity-or-availability-failure
+  never_silent: true
+  requirements:
+  - record_original_model_failure
+  - preserve_same_scope_and_worktree_boundaries
+  - re-run_review_and_acceptance_for_fallback_output
+  - never_bypass_provenance_backup_rollback_broker_or_integrity_gates
+provider_policy:
+  denylist: []
+  conditional_escalation_openrouter_anthropic_seats:
+  - '1.8'
+  notes:
+  - Direct Anthropic APIs are unused.
+  - OpenRouter anthropic/* is allowed only for conditional-escalation phase 1.8 fallbacks.
+  allowed_gateways:
+  - openrouter
+  - cursor
+  - x.ai
+  - google-antigravity
+  - openai
+  record_on_every_call:
+  - upstream_provider
+  - usage_cost_usd
+  - effort
+  - model
+  price_ceilings_usd_per_1m:
+    openai/gpt-5.6-sol:
+      prompt: 2.2
+      completion: 11.0
+    openai/gpt-5.6-luna:
+      prompt: 0.22
+      completion: 1.32
+    z-ai/glm-5.3-flash:
+      prompt: 0.0825
+      completion: 0.275
+    z-ai/glm-5.3:
+      prompt: 1.54
+      completion: 4.84
+    qwen/qwen3.8-max:
+      prompt: 2.2
+      completion: 6.6
+    moonshotai/kimi-k3:
+      prompt: 3.3
+      completion: 16.5
+    x-ai/grok-4.6:
+      prompt: 2.2
+      completion: 6.6
+    deepseek/deepseek-v4-flash-0731:
+      prompt: 0.242
+      completion: 0.726
+    google/gemini-3.8-flash:
+      prompt: 0.825
+      completion: 4.125
+    openai/gpt-6-astra:
+      prompt: 8.8
+      completion: 44.0
+independence:
+  author_phases:
+  - '0'
+  - '1'
+  - '2'
+  adversarial_slots:
+    '1.5':
+      model: moonshotai/kimi-k3
+      effort: max
+    '1.6':
+      model: gpt-6-astra
+      effort: high
+      provider: openai
+    '4':
+      model: gpt-6-astra
+      effort: high
+      provider: openai
+    '6':
+      model: gpt-6-astra
+      effort: high
+      provider: openai
+  author_failover:
+    if_author_is: x-ai/grok-4.6
+    remap:
+      '1.6':
+        model: z-ai/glm-5.3
+        effort: max
+      '6':
+        model: qwen/qwen3.8-max
+        effort: xhigh
+    or_stop: true
+  author_failover_by_model:
+    openai/gpt-6-astra:
+      remap:
+        '1.6':
+          model: x-ai/grok-4.6
+          effort: high
+        '4':
+          model: qwen/qwen3.8-max
+          effort: xhigh
+        '6':
+          model: z-ai/glm-5.3
+          effort: max
+      or_stop: false
+      reason: astra-authored-phases-1-2-cannot-self-review
+    x-ai/grok-4.6:
+      remap:
+        '1.6':
+          model: z-ai/glm-5.3
+          effort: max
+        '6':
+          model: qwen/qwen3.8-max
+          effort: xhigh
+      or_stop: true
+validation_artifact: artifacts/model-routing-validation-20260811.json

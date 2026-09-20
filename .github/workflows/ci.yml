@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "disposable/**"]
+
+jobs:
+  focused-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact reviewed source
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "P44_TESTED_SHA=$(git rev-parse HEAD)"
+          echo "P44_TESTED_TREE=$(git rev-parse HEAD^{tree})"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused unit dependencies
+        run: python3 -m pip install pytest pyyaml cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
+      - name: Run host-safe unit tests
+        env:
+          PYTHONPATH: controller
+        run: |
+          python3 -m pytest -q --tb=short \
+            tests/test_openrouter_budget.py \
+            tests/test_model_routing.py \
+            tests/test_auditor_bind.py \
+            tests/test_retry_task_exhaust_order.py \
+            tests/test_pinned_trust_session.py \
+            tests/test_string_acceptance_criteria.py \
+            tests/test_p40_root_cause_repair.py \
+            tests/test_p43_activation.py \
+            tests/test_p44_activation.py \
+            tests/test_p45_activation.py \
+            tests/test_p46_activation.py \
+            tests/test_goal_cli.py \
+            tests/test_artifact_owner.py \
+            tests/test_goal_dependencies.py

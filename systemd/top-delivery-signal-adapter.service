@@ -1,0 +1,24 @@
+[Unit]
+Description=TOP-DELIVERY authenticated Signal command adapter
+After=top-delivery-signal-daemon.service top-delivery-controller.service top-delivery-auth.service
+Requires=top-delivery-signal-daemon.service top-delivery-controller.service
+Wants=top-delivery-auth.service
+
+[Service]
+Type=simple
+User=topdelivery
+Group=topdelivery
+EnvironmentFile=/etc/top-delivery/signal-adapter.env
+WorkingDirectory=/opt/top-delivery/control-plane
+ExecStart=/usr/bin/python3 /opt/top-delivery/control-plane/signal_adapter.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/top-delivery
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

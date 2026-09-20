@@ -1,0 +1,11 @@
+# Pins match the Comms-01 2026-09-07 disposable test runtime
+# (Debian python3.13 + PyPI; cryptography 43.0.0 already installed).
+# Advisory: retain current installed versions; no GitHub Actions at this SHA.
+fastapi==0.141.1
+uvicorn
+psycopg2-binary==2.9.10
+pyotp
+alembic
+redis
+PyYAML==6.0.2
+cryptography==43.0.0

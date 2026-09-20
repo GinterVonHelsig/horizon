@@ -1,0 +1,72 @@
+{
+  "provider": "openrouter",
+  "model": "anthropic/claude-opus-5",
+  "effort": "high",
+  "response_status": "complete",
+  "verdict": "request_changes",
+  "blockers": [
+    {
+      "id": "B1",
+      "title": "Tracked-vs-deployed equivalence not demonstrated",
+      "detail": "Three files were newly tracked but only two artifact hashes were reported; the core claim that the repository reflects the deployed control plane was unverified."
+    },
+    {
+      "id": "B2",
+      "title": "ArtifactStore resolution widening and exposed read path",
+      "detail": "Root containment, symlink/realpath checks, traversal rejection and manifest-declared allowlisting were not evidenced for group-accessible status sockets."
+    },
+    {
+      "id": "B3",
+      "title": "Signal receive path lacks end-to-end evidence and has a silent-empty risk",
+      "detail": "Daemon errors, timeouts and startup races were not proven distinguishable from an empty poll; live inbound and 2FA remained untested."
+    },
+    {
+      "id": "B4",
+      "title": "No release authority or executor was asserted by absence",
+      "detail": "No positive fail-closed tests proved that order, release and execute paths are rejected on both sockets and by the dispatcher."
+    }
+  ],
+  "major_findings": [
+    "Socket authorization boundary was unproven beyond protocol behavior; no negative command tests or topdelivery group audit were cited.",
+    "Hermes runtime isolation lacked restart/reboot and stale-socket evidence.",
+    "Omitting the account selector is coupled to the single-account daemon state and lacked a second-account guard.",
+    "TRUSTED_UNVERIFIED identity status required fail-closed fingerprint handling and protected pin evidence.",
+    "Bounded daemon errors needed an explicit bound and redaction guarantee.",
+    "Queue/lease/retry without an executor risked expiry retry storms, duplicate delivery and ambiguous acknowledgement.",
+    "Dependency/interpreter pinning, signed provenance and a rollback restore rehearsal were not evidenced.",
+    "38 focused tests lacked explicit traversal, negative authorization, concurrency, restart/reboot, lease and deployed-import coverage.",
+    "A self-reported acceptance hash lacked an external or append-only witness."
+  ],
+  "minor_findings": [
+    "Generic controller module names risk import-order shadowing.",
+    "Compileall and diff-check do not prove service-context imports.",
+    "Operator residuals lacked timeout and abort criteria.",
+    "Hash labels were ambiguous across the three tracked controller files.",
+    "Run-manifest-relative behavior for prior runs was not stated."
+  ],
+  "required_tests": [
+    "Per-file tracked/deployed SHA-256 equality for all three controller files and the adapter.",
+    "ArtifactStore tests for absolute paths, traversal, encoded/unicode traversal, symlink escapes, hardlinks, root-prefix collisions, missing entries and TOCTOU.",
+    "Allowlist test proving only manifest-declared artifacts are readable.",
+    "Negative socket tests for mutating, unknown, malformed and oversized requests on both sockets.",
+    "Fail-closed rejection tests for order, release and execute-shaped commands.",
+    "Signal tests for daemon down, startup, timeout, malformed JSON, multi-account state and redacted bounded errors.",
+    "Signal single-flight/concurrency test.",
+    "Fingerprint mismatch and missing-pin fail-closed tests.",
+    "Redaction tests for messages, phone numbers and 2FA codes.",
+    "Hermes restart/reboot runtime-directory test.",
+    "Lease expiry, duplicate retry, idempotency and heartbeat-loss tests.",
+    "Rollback restore rehearsal using the pre-change archive."
+  ],
+  "required_operator_actions": [
+    "Publish a path-to-SHA mapping for every deployed file.",
+    "Audit topdelivery group membership and socket mode.",
+    "Verify fail-closed fingerprint pin storage and mismatch behavior.",
+    "Perform live Signal inbound and 2FA tests.",
+    "Perform and log rollback rehearsal.",
+    "Externally witness or sign the acceptance hash.",
+    "Reboot comms-01 and re-capture service/socket evidence.",
+    "Document the single-account precondition and guard."
+  ],
+  "recorded_at": "2026-08-10T05:20:00Z"
+}

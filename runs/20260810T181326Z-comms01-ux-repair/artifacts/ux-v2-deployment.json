@@ -1,0 +1,30 @@
+{
+  "run_id": "20260810T181326Z-comms01-ux-repair",
+  "commit": "176bf970ca432a53d33a6cb949f73c3209084478",
+  "scope": "Signal authorization prompt and next-action presentation",
+  "deployed_host": "comms-01",
+  "deployed_path": "/opt/top-delivery/control-plane/signal_adapter.py",
+  "local_sha256": "1697482789a75919e083c40f715baa0f8bdc0f8bc400e9ba351a13b37d7183c6",
+  "remote_sha256": "1697482789a75919e083c40f715baa0f8bdc0f8bc400e9ba351a13b37d7183c6",
+  "pre_change_backup": {
+    "directory": "/var/lib/top-delivery/backups/comms01-signal-ux-v2-pre-20260810T183701Z",
+    "signal_adapter_sha256": "8b59a195ec4fdb0989ed025ee90b25b4f661d0d4a8a085688cdf0ca0fd72ae55"
+  },
+  "tests": {
+    "focused": "54 passed",
+    "py_compile": "passed",
+    "placeholder_preservation": true,
+    "four_token_authorization_template": true,
+    "malformed_authorize_guidance": true,
+    "next_action_is_exact_command": true
+  },
+  "service": {
+    "restarted": ["top-delivery-signal-adapter.service"],
+    "active": true,
+    "nrestarts": 0,
+    "controller_restarted": false,
+    "broker_orders": 0,
+    "ledger_mutations": 0
+  },
+  "acceptance": "Awaiting the next queue-next-prompt message to confirm the corrected live challenge text."
+}

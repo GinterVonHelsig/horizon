@@ -1,0 +1,25 @@
+{
+  "run_id": "20260810T181326Z-comms01-ux-repair",
+  "status": "completed",
+  "phase": "control-plane-remediation-complete",
+  "acceptance": {
+    "formatter_deployed": true,
+    "local_remote_sha_match": true,
+    "focused_tests": "52 passed",
+    "post_deployment_signal_status_round_trip": true,
+    "human_readable_reply_observed": true,
+    "internal_json_contract_preserved": true,
+    "raw_non_json_fallback_covered": true,
+    "broker_orders": 0,
+    "ledger_mutations": 0,
+    "production_database_mutation": false,
+    "network_changes": false
+  },
+  "deployed_commit": "8125e9aa8a3204e99d0120e2d07f6e54c2ebd180",
+  "deployed_signal_adapter_sha256": "8b59a195ec4fdb0989ed025ee90b25b4f661d0d4a8a085688cdf0ca0fd72ae55",
+  "operator_evidence": "A post-deployment status message was received by Comms-01 and the operator observed the formatted TOP-DELIVERY reply.",
+  "residuals": [
+    "Broader Comms-01 live 2FA challenge/authorize round-trip remains separate.",
+    "Signal identity remains TRUSTED_UNVERIFIED pending separate out-of-band confirmation."
+  ]
+}

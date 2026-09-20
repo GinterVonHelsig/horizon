@@ -1,0 +1,37 @@
+{
+  "date": "2026-08-10",
+  "generated_at": "2026-08-10T19:26:45Z",
+  "source": "review_day.py today --json plus read-only trade breakdown",
+  "financial": {
+    "trusted_closed_pnl": 0.0,
+    "evidence_backed_pnl": 0.0,
+    "closed_trades": 67,
+    "open_trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "flat_results": 67,
+    "missing_broker_evidence": 0
+  },
+  "trade_breakdown": [
+    {"instrument": "EUR_USD", "rows": 5, "pnl": 0.0, "status": "CLOSED"},
+    {"instrument": "GBP_USD", "rows": 9, "pnl": 0.0, "status": "CLOSED"},
+    {"instrument": "NZD_USD", "rows": 6, "pnl": 0.0, "status": "CLOSED"},
+    {"instrument": "USD_CAD", "rows": 20, "pnl": 0.0, "status": "CLOSED"},
+    {"instrument": "USD_CHF", "rows": 27, "pnl": 0.0, "status": "CLOSED"}
+  ],
+  "failure_breakdown": [
+    {"reason": "ENTRY_VERIFY_FAILED (broker flat during reconciliation)", "rows": 67}
+  ],
+  "operational": {
+    "service_ok": true,
+    "all_strategies": "active sessions: 4; scheduled after exit: 7",
+    "broker_synchronization": "OANDA broker:0/db:0/synced:True; Alpaca broker:0/db:0/synced:True",
+    "accounting_high_severity": 0,
+    "order_intents_today": 0,
+    "broker_events_today": 0,
+    "open_rows": 0,
+    "opportunity_blocks": 0,
+    "readiness_note": "Preflight and broker synchronization are healthy, but the entry verification path requires investigation before treating the day as operationally clean."
+  },
+  "verdict": "Financially flat with no broker loss or open exposure; operationally healthy at preflight but not clean because all 67 local trade rows ended ENTRY_VERIFY_FAILED."
+}

@@ -1,0 +1,68 @@
+{
+  "manifest_version": 1,
+  "run_id": "20260810T050500Z-comms01-repair",
+  "created_at": "2026-08-10T05:05:00Z",
+  "updated_at": "2026-08-10T05:31:00Z",
+  "mode": "autonomous",
+  "status": "active",
+  "phase": "4.5",
+  "task": "P1-COMMS01-TOP-DELIVERY-REPAIR",
+  "objective": "Complete the operational Comms-01 control plane and reconcile TOP-DELIVERY without changing trading or prior runs.",
+  "workspace": "/root/TOP-DELIVERY",
+  "historical_runs_preserved": true,
+  "authority": {
+    "scope": [
+      "isolated TOP-DELIVERY source and evidence",
+      "Comms-01 localhost-only control-plane services",
+      "encrypted Comms-01 backup and restore rehearsal",
+      "read-only Signal and Hermes command paths"
+    ],
+    "forbidden": [
+      "production trading mutation",
+      "broker orders or broker-state mutation",
+      "production database or ledger mutation",
+      "network routing changes",
+      "prior-run mutation",
+      "secret publication"
+    ]
+  },
+  "source": {
+    "base": "d53fe8994490c5da88b82842a90b112d9cc3312e",
+    "implementation": "46315c95b8503ed90c614e34c1a5daff92bc53c6",
+    "adapter_commit": "cdcb67d4c462f51509defb4feb5acd2e3e83b9a6",
+    "receive_rpc_fix": "00714b983aedf066b33f3dbb692acec68f55998e",
+    "startup_retry_fix": "7a326150ea702cf66d22b0f79fee9e8004eea18f",
+    "canonical_top_delivery_commit": "e6b41b6accc305c354868e36e7b01340d6fdefd7",
+    "reviewed_release_head_sha": "5499b47bc9ac9b8a45b79df291123aec8e969544",
+    "merged_release_sha": "552f732c2e61a3ad7ed3feb69ff8bb59b129bcb7"
+  },
+  "artifacts": [
+    "artifacts/acceptance.json",
+    "artifacts/claude-opus-review.json",
+    "artifacts/fable-review.json",
+    "artifacts/claude-opus-rereview.json",
+    "artifacts/fable-rereview.json",
+    "artifacts/next-step.md"
+  ],
+  "evidence": [
+    "artifacts/acceptance.json",
+    "artifacts/claude-opus-review.json",
+    "artifacts/fable-review.json",
+    "artifacts/claude-opus-rereview.json",
+    "artifacts/fable-rereview.json"
+  ],
+  "blockers": [
+    "live Signal inbound status round-trip requires one operator message",
+    "live 2FA authorize round-trip requires one operator-supplied six-digit code",
+    "Signal identity remains TRUSTED_UNVERIFIED pending out-of-band confirmation"
+  ],
+  "next_action": "Complete operator Signal/2FA and identity checks; no engineering or repository transport work remains for this isolated control-plane outcome.",
+  "writing_agent": null,
+  "deployment": {
+    "target": "comms-01",
+    "production_trading_touched": false,
+    "production_database_touched": false,
+    "broker_state_touched": false,
+    "network_state_changed": false
+  }
+}

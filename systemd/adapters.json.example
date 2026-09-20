@@ -1,0 +1,82 @@
+{
+  "adapters": [
+    {
+      "id": "codex-cli",
+      "kind": "codex_cli",
+      "provider": "openai",
+      "executable": "/usr/local/bin/codex",
+      "model": "gpt-5",
+      "codex_home": "/var/lib/top-delivery/codex",
+      "credential_env": [],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": ["/opt/top-delivery", "/var/lib/top-delivery"]
+    },
+    {
+      "id": "cursor-cli",
+      "kind": "cursor_cli",
+      "provider": "cursor",
+      "executable": "/usr/bin/cursor-agent",
+      "model": "composer-1",
+      "approval_mode": "never",
+      "credential_env": [],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": ["/opt/top-delivery", "/var/lib/top-delivery"]
+    },
+    {
+      "id": "claude-cli",
+      "kind": "claude_cli",
+      "provider": "anthropic",
+      "executable": "/usr/bin/claude",
+      "model": "claude-opus-4",
+      "permission_mode": "plan",
+      "credential_env": [],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": ["/opt/top-delivery", "/var/lib/top-delivery"]
+    },
+    {
+      "id": "pi-cli",
+      "kind": "pi_cli",
+      "provider": "openrouter",
+      "executable": "/usr/local/bin/pi",
+      "model": "qwen-3.8",
+      "endpoint": "http://127.0.0.1:8080/v1",
+      "credential_env": ["OPENROUTER_API_KEY"],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": ["/opt/top-delivery", "/var/lib/top-delivery"]
+    },
+    {
+      "id": "comms01-qwen",
+      "kind": "http_openai",
+      "provider": "comms01",
+      "endpoint": "http://127.0.0.1:9104/v1/chat/completions",
+      "model": "qwen-3.8",
+      "credential_env": ["COMMS01_API_KEY"],
+      "timeout_seconds": 600,
+      "allowed_cwd_roots": ["/var/lib/top-delivery"]
+    },
+    {
+      "id": "comms02-kat",
+      "kind": "http_openai",
+      "provider": "comms02",
+      "endpoint": "http://127.0.0.1:9105/v1/chat/completions",
+      "model": "kat",
+      "credential_env": ["COMMS02_API_KEY"],
+      "timeout_seconds": 600,
+      "allowed_cwd_roots": ["/var/lib/top-delivery"]
+    },
+    {
+      "id": "openrouter-fallback",
+      "kind": "http_openai",
+      "provider": "openrouter-local-proxy",
+      "endpoint": "http://127.0.0.1:9106/v1/chat/completions",
+      "model": "openrouter/auto",
+      "credential_env": ["OPENROUTER_API_KEY"],
+      "timeout_seconds": 600,
+      "allowed_cwd_roots": ["/var/lib/top-delivery"]
+    }
+  ],
+  "routes": {
+    "default_executor": "codex-cli",
+    "default_auditor": "claude-cli"
+  }
+}

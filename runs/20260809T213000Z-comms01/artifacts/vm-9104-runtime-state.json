@@ -1,0 +1,17 @@
+{
+  "vmid": 9104,
+  "name": "comms-01",
+  "node": "home05",
+  "node_ip": "192.168.0.49",
+  "state": "stopped-after-home05-reboot",
+  "kvm": false,
+  "reason": "home05 BIOS disables AMD SVM; software emulation remains available but was not retained running",
+  "vga": "std",
+  "serial0": false,
+  "ssh_cloud_init": true,
+  "ipv4": "not acquired",
+  "ipv6": "link-local only",
+  "broker_access": false,
+  "production_database_access": false,
+  "next_action": "enable SVM/AMD-V in physical home05 BIOS, reboot, verify /dev/kvm, then start VM and verify SSH/DHCP"
+}

@@ -1,0 +1,20 @@
+[Unit]
+Description=TOP-DELIVERY action-bound authorization API
+After=postgresql.service redis-server.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=topdelivery
+Group=topdelivery
+EnvironmentFile=/etc/top-delivery/auth.env
+WorkingDirectory=/opt/top-delivery-auth
+ExecStart=/opt/top-delivery-venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8787
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/top-delivery-auth
+
+[Install]
+WantedBy=multi-user.target

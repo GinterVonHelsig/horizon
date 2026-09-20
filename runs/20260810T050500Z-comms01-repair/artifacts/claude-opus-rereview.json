@@ -1,0 +1,71 @@
+{
+  "provider": "openrouter",
+  "model": "anthropic/claude-opus-5",
+  "effort": "high",
+  "response_status": "complete",
+  "verdict": "conditional_approve_no_blockers",
+  "blockers": [],
+  "major_findings": [
+    {
+      "id": "MAJ-1",
+      "area": "Signal identity trust",
+      "finding": "TRUSTED_UNVERIFIED remains; read-only review cannot confirm the mismatch or mid-session safety-number path.",
+      "disposition": "operator-dependent fingerprint confirmation plus queueable fail-closed assertion",
+      "risk": "medium"
+    },
+    {
+      "id": "MAJ-2",
+      "area": "Signal ingress",
+      "finding": "Single-account receive and malformed-result behavior are unit-tested, but no live inbound message or 2FA code has traversed the path.",
+      "disposition": "operator-dependent",
+      "risk": "medium; confined to inbound communications"
+    },
+    {
+      "id": "MAJ-3",
+      "area": "Boot persistence",
+      "finding": "No full host reboot has been performed; cold-boot service ordering and socket recreation remain unobserved.",
+      "disposition": "queueable engineering plus scheduled operator window",
+      "risk": "medium availability risk"
+    },
+    {
+      "id": "MAJ-4",
+      "area": "Bounded daemon detail",
+      "finding": "Review cannot confirm that bounds and redaction precede interpolation into logs or socket responses.",
+      "disposition": "queueable redaction/allowlist test",
+      "risk": "medium log disclosure risk"
+    },
+    {
+      "id": "MAJ-5",
+      "area": "Fail-closed command surface",
+      "finding": "Negative commands are tested at unit and live socket levels, but unknown/case/whitespace/unicode variants and default-deny fall-through were not fully fuzzed.",
+      "disposition": "queueable boundary fuzz test",
+      "risk": "medium-high if defaults become permissive; no executor mitigates impact"
+    }
+  ],
+  "minor_findings": [
+    "TOCTOU between artifact realpath validation and open, and normalization-collision coverage, are not shown.",
+    "0660 socket safety depends on continuous topdelivery group membership drift control.",
+    "Rollback extraction was verified, but restore-then-start behavior was not rehearsed.",
+    "Generation monotonicity across restart and concurrent sockets is not evidenced.",
+    "Hash set is recorded in mutable run artifacts rather than an append-only provenance store.",
+    "Systemd hardening directives were not enumerated in the candidate summary."
+  ],
+  "required_tests": [
+    "Fail-closed pinned-fingerprint mismatch and safety-number-change tests.",
+    "Both-socket default-deny tests for unknown and normalized execute/order/deploy/release/promote variants.",
+    "Redaction tests using synthetic message bodies, phone numbers and six-digit codes in malformed daemon results.",
+    "ArtifactStore TOCTOU and normalization-collision tests.",
+    "Generation-counter monotonicity across restart and concurrent sockets.",
+    "Post-reboot six-service/two-socket verification with NRestarts=0.",
+    "Isolated restore-then-start rollback rehearsal.",
+    "Recurring deployed hash/socket/group drift check."
+  ],
+  "required_operator_actions": [
+    "Send one operator-originated Signal message.",
+    "Supply one live 2FA code and verify it is absent from logs/responses.",
+    "Confirm the pinned Signal fingerprint out-of-band or accept TRUSTED_UNVERIFIED as documented risk.",
+    "Schedule a full comms-01 reboot and cold-boot verification.",
+    "Acknowledge that comms-01 has no model runner/executor or release authority."
+  ],
+  "rationale": "No true blocker remains for the isolated control-plane candidate. The remaining items are operator-dependent or queueable; no execution, order, deployment or release authority exists on comms-01."
+}

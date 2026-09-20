@@ -1,0 +1,42 @@
+{
+  "provider": "openrouter",
+  "model": "anthropic/claude-fable-5",
+  "effort": "high",
+  "response_status": "complete",
+  "verdict": "conditional_approve",
+  "blockers": [
+    "Signal identity remains TRUSTED_UNVERIFIED; the pinned fingerprint mitigates drift but out-of-band safety-number verification has not been performed, so the live channel cannot yet be trusted for 2FA or operator instructions.",
+    "Live inbound Signal receive and live 2FA are untested because they require an operator message/code; the primary Comms-01 function is therefore unproven end-to-end."
+  ],
+  "major_findings": [
+    "Deployed controller/adapter hashes and a pre-change archive hash were reported, but no path-to-hash mapping proved all tracked files equal the deployed artifacts.",
+    "The acceptance hash was unsigned and read over the same socket affected by the change; no append-only or tamper-evident chain was described.",
+    "ArtifactStore containment lacked explicit symlink escape, traversal and outside-root manifest coverage.",
+    "Lease/retry semantics lacked tests for expiry during work, partial-success retry idempotency and heartbeat loss.",
+    "Omitting account has ambiguity risk if a second account is ever registered.",
+    "0660 sockets rely on group membership and protocol checks; peer credentials and negative authorization evidence were not cited."
+  ],
+  "minor_findings": [
+    "Hermes runtime isolation lacked stale-socket and cross-service restart evidence.",
+    "Compileall did not prove systemd-context imports.",
+    "Bounded daemon errors lacked stated bounds, backoff and exhaustion alerting.",
+    "Test coverage was unquantified and not explicitly run against deployed units."
+  ],
+  "required_tests": [
+    "Hash tracked controller.py, controller_socket.py, top_delivery_controller.py and adapter against deployed paths and archive the mapping.",
+    "ArtifactStore symlink, traversal, absolute-path and outside-root tests.",
+    "Signal daemon restart during receive, duplicate receiver, second-account state and bounded-error exhaustion tests.",
+    "Lease expiry, retry idempotency and heartbeat-loss tests.",
+    "Socket negative authorization tests and owner/group assertions.",
+    "Hermes concurrent restart and runtime-directory isolation test.",
+    "Exact systemd-environment import test."
+  ],
+  "required_operator_actions": [
+    "Perform out-of-band Signal safety-number verification and record the fingerprint.",
+    "Send a live inbound message and complete one live 2FA round trip.",
+    "Countersign or store the acceptance and deployment hashes outside the mutable Comms-01 root.",
+    "Audit topdelivery group membership."
+  ],
+  "rationale": "The isolated scope and no-broker/no-production mutation posture are sound. Conditional approval remains appropriate until identity trust and live receive/2FA are witnessed, and the evidence-chain, hash-equivalence, containment and lease/retry tests are recorded.",
+  "recorded_at": "2026-08-10T05:21:00Z"
+}

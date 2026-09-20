@@ -1,0 +1,33 @@
+# F8 exclude-from (rsync, transfer-root-relative)
+# Successful invocation: rsync -a --no-owner --no-group --no-perms --exclude-from=<this file>
+# NFS does not preserve owner, group, or mode bits.
+#
+# Paths outside this transfer (live current tree). They are not dereferenced.
+# Documented, not used as rsync patterns for this snapshot:
+#   /etc/top-delivery/*.env
+#   /root/.config/gh/hosts.yml
+#   /home/solops/.config/gh/hosts.yml
+#   /opt/top-delivery-auth/**
+#
+.git/
+__pycache__/
+.pytest_cache/
+*.env
+.env.*
+*credential*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+hosts.yml
+.netrc
+.pgpass
+.npmrc
+.pypirc
+id_rsa*
+id_ed25519*
+.ssh/
+.aws/
+# Intentionally NOT using *token* or *secret* as filename globs: they match
+# in-tree Python modules (authority_socket_secrets.py) which are source, not stores.

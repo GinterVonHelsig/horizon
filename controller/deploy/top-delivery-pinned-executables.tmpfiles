@@ -1,0 +1,4 @@
+# The executable manifest is a root-owned integrity anchor. It is readable by
+# the controller's fixed service group but not writable by that group or any
+# other local user. Git cannot encode this runtime mode.
+z /opt/top-delivery/controller/pinned-executables.json 0640 root topdelivery -

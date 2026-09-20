@@ -1,0 +1,18 @@
+# Comms-01 trust anchors are provisioned out of band. These rules adjust only
+# existing files; they never create a missing credential or key.
+z /etc/top-delivery/comms01-operator-keys.json 0640 root 59901 -
+z /etc/top-delivery/comms01-terra-receipt-keys.json 0640 root 59901 -
+z /etc/top-delivery/comms01-attestation.json 0640 root 59901 -
+z /etc/top-delivery/comms01-authority-db-target.json 0640 root 59901 -
+z /etc/top-delivery/comms01-workflow-db-target.json 0640 root 59901 -
+z /etc/top-delivery/comms01-disposable-harness.json 0600 root root -
+z /etc/top-delivery/comms01-disposable-signing-key 0600 root root -
+z /etc/top-delivery/comms01-disposable-verifier.pub 0640 root 59901 -
+z /etc/top-delivery/comms01-disposable-consumed-nonces.json 0600 root root -
+z /etc/top-delivery/comms01-migration-source-provenance.json 0600 root root -
+z /etc/top-delivery/comms01-authority-write-secret 0640 root 59901 -
+z /etc/top-delivery/comms01-ledger-mac.key 0640 root 59901 -
+z /etc/top-delivery/comms01-terra-gateway-mac.key 0640 root 59901 -
+z /etc/top-delivery/comms01-runner-envelope.pub 0640 root 59901 -
+z /etc/top-delivery/comms01-review-signing.key 0600 root root -
+z /etc/top-delivery/comms01-review-signing.pub 0600 root root -

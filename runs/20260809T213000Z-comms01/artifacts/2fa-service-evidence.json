@@ -1,0 +1,28 @@
+{
+  "service": "top-delivery-auth.service",
+  "vm": "comms-01 / 192.168.0.91",
+  "bind": "127.0.0.1:8787",
+  "database": "isolated local PostgreSQL top_delivery_auth",
+  "totp": "configured",
+  "signal": "not_configured",
+  "tests": {
+    "healthz": "pass",
+    "challenge_creation": "pass",
+    "valid_totp_authorization": "pass",
+    "single_use_replay_rejection_http_409": "pass"
+  },
+  "secrets": {
+    "totp_seed_in_repository": false,
+    "totp_seed_in_synology_archive": false,
+    "internal_token_in_repository": false,
+    "database_password_in_repository": false
+  },
+  "remaining": [
+    "Enroll operator TOTP seed on personal authenticator",
+    "Configure dedicated Signal identity and notifier",
+    "Run wrong-hash, expired-code, restart-recovery and notification tests"
+  ],
+  "production_mutation": false,
+  "broker_mutation": false,
+  "ledger_mutation": false
+}

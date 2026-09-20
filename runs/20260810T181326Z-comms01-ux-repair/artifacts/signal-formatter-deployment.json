@@ -1,0 +1,38 @@
+{
+  "run_id": "20260810T181326Z-comms01-ux-repair",
+  "commit": "8125e9aa8a3204e99d0120e2d07f6e54c2ebd180",
+  "scope": "Signal outbound presentation only",
+  "deployed_host": "comms-01",
+  "deployed_path": "/opt/top-delivery/control-plane/signal_adapter.py",
+  "local_sha256": "8b59a195ec4fdb0989ed025ee90b25b4f661d0d4a8a085688cdf0ca0fd72ae55",
+  "remote_sha256": "8b59a195ec4fdb0989ed025ee90b25b4f661d0d4a8a085688cdf0ca0fd72ae55",
+  "pre_change_backup": {
+    "directory": "/var/lib/top-delivery/backups/comms01-signal-formatter-pre-20260810T182420Z",
+    "controller_sha256": "99760bfbe644cee0e9dddb66e5e038cd68bdad87e8a6266bc7c7c4813e1ea526",
+    "signal_adapter_sha256": "a127824c58db1d34caf4b1af2fc7c5cc529448c9d23247e336bc992e43d063df"
+  },
+  "tests": {
+    "focused": "52 passed",
+    "py_compile": "passed",
+    "flush_preserves_internal_json": true,
+    "read_only_plain_text": true,
+    "authorization_challenge_plain_text": true,
+    "malformed_html_fallback": true
+  },
+  "service": {
+    "restarted": ["top-delivery-signal-adapter.service"],
+    "active": true,
+    "nrestarts": 0,
+    "controller_restarted": false,
+    "hermes_restarted": false,
+    "signal_daemon_restarted": false
+  },
+  "safety": {
+    "trading_source_touched": false,
+    "broker_orders": 0,
+    "ledger_mutations": 0,
+    "production_database_mutation": false,
+    "network_changes": false
+  },
+  "acceptance": "Awaiting one post-deployment operator status message to verify live Signal rendering."
+}

@@ -1,0 +1,205 @@
+{
+  "title": "Trading Platform Advancement",
+  "as_of": "2026-08-18",
+  "scope": "Comms-01 only",
+  "repository_default_branch": "origin/main",
+  "accepted_section0_candidate": {
+    "commit": "1616f86c5fae4a0e53e24a264542adeb07b5ab8a",
+    "run_id": "20260818T214140Z-top-delivery-parent-controller-mainline",
+    "deployment": "Comms-01 control-plane only; not production"
+  },
+  "architecture_reconciliation": {
+    "master_plan": "architecture/TRADING_SYSTEM_ADVANCEMENT_MASTER_PLAN.md",
+    "target_design": "architecture/PRODUCTION-SPLIT-TARGET-ARCHITECTURE.md",
+    "staging_provisioning": "NOT_AUTHORIZED_IN_THIS_OUTCOME",
+    "staging_cells": [
+      "staging-edge-01",
+      "staging-control-01",
+      "staging-broker-01",
+      "staging-broker-02",
+      "staging-broker-03",
+      "staging-broker-04",
+      "staging-db-01",
+      "staging-coordination-01"
+    ],
+    "memory_recommendation": {
+      "comms01": "10 GiB provisional, one RTX 3090/Qwen workload",
+      "comms02": "8 GiB provisional, one RTX 3090 Ti/KAT workload",
+      "measurement_required_before_resize": true
+    }
+  },
+  "current_reality": [
+    "Production service is active from /home/trading; current HEAD is b5bfa2a16612ce2a96a94096bb5e494162e10536.",
+    "The production checkout has one untracked reports/ path; it is not a clean reproducible release checkout yet.",
+    "PostgreSQL is the production authority on postgres-01; SQLite is development/test or historical archive only.",
+    "Comms-01 control-plane services are active on home05; Signal, 2FA, controller, supervisor and the Hermes-compatible adapter are deployed from the accepted 9850c93 section-0 candidate.",
+    "Comms-01 has one RTX 3090; no Ollama, vLLM or downloaded local model is currently active.",
+    "TOP-DELIVERY repository default branch is origin/main; origin/master is absent.",
+    "Longspan Manager/Executor/Auditor workflow is implemented in the Comms-01 controller worktree with PostgreSQL/Alembic migrations 004_longspan_workflow, 005_longspan_hardening, 006_longspan_authority, and 007_longspan_authority_hardening (head); not deployed beyond local disposable-database tests."
+  ],
+  "tree": [
+    {
+      "id": "0",
+      "name": "Workflow and delivery fabric",
+      "status": "ACTIVE/PARTIAL",
+      "items": [
+        {"name": "Persistent manifests and checkpoints", "status": "DONE"},
+        {"name": "TOP-DELIVERY project state and next-outcome tracking", "status": "ACTIVE"},
+        {"name": "Terra delivery phase/release gates", "status": "ACTIVE"},
+        {"name": "Longspan Manager/Executor/Auditor child design", "status": "IMPLEMENTED"},
+        {"name": "Longspan PostgreSQL/Alembic workflow and experiment ledger", "status": "IMPLEMENTED"},
+        {"name": "Durable child leases and stale-worker recovery", "status": "PARTIAL"},
+        {"name": "Exact-SHA transport, rollback and post-deploy QA", "status": "PARTIAL"}
+      ]
+    },
+    {
+      "id": "1",
+      "name": "Production stabilization",
+      "status": "ACTIVE",
+      "items": [
+        {"name": "Service active from canonical /home/trading", "status": "DONE"},
+        {"name": "PostgreSQL production cutover", "status": "DONE"},
+        {"name": "OANDA/Alpaca flat and synchronized in latest review", "status": "DONE"},
+        {"name": "Clean reproducible /home/trading release checkout", "status": "INCONSISTENT"},
+        {"name": "Accounting and broker-entry path", "status": "ACTIVE"},
+        {"name": "No unintended broker or ledger mutation", "status": "DONE"}
+      ]
+    },
+    {
+      "id": "2",
+      "name": "Database architecture",
+      "status": "ACTIVE/PARTIAL",
+      "items": [
+        {"name": "PostgreSQL durable truth on postgres-01", "status": "DONE"},
+        {"name": "Alembic-only schema ownership", "status": "PARTIAL"},
+        {"name": "Remove runtime DDL paths", "status": "ACTIVE"},
+        {"name": "WAL/PITR backup and restore drills", "status": "PARTIAL"},
+        {"name": "strategy_instances and per-instance runtime leases", "status": "NOT_STARTED"},
+        {"name": "Broker intents/events/fills/positions normalization", "status": "PARTIAL"},
+        {"name": "Durable writer fencing and transactional outbox", "status": "PARTIAL"},
+        {"name": "Redis crash durability and coordination burn-in", "status": "DEFERRED"},
+        {"name": "Clustered PostgreSQL", "status": "DEFERRED"}
+      ]
+    },
+    {
+      "id": "3",
+      "name": "Staging environment",
+      "status": "NOT_STARTED/PARTIAL",
+      "items": [
+        {"name": "Comms-01 control-plane VM on home05", "status": "DONE"},
+        {"name": "Trading staging VM with exact-SHA promotion path", "status": "NOT_STARTED"},
+        {"name": "Separate staging PostgreSQL and Redis namespace", "status": "NOT_STARTED"},
+        {"name": "Separate OANDA/Alpaca simulation credentials", "status": "NOT_STARTED"},
+        {"name": "Migration, fencing, crash and browser gates", "status": "NOT_STARTED"},
+        {"name": "Staging-to-production promotion", "status": "PLANNED"}
+      ]
+    },
+    {
+      "id": "4",
+      "name": "UI/API and trading-engine separation",
+      "status": "NOT_STARTED/PARTIAL",
+      "items": [
+        {"name": "FastAPI UI/API/Auth boundary", "status": "CURRENTLY COLOCATED"},
+        {"name": "Trading engine service boundary", "status": "CURRENTLY COLOCATED"},
+        {"name": "Emergency stop/resume and writer fencing", "status": "PARTIAL"},
+        {"name": "OANDA, Alpaca and crypto worker roles", "status": "NOT_STARTED"},
+        {"name": "Market-data and scheduler services", "status": "PARTIAL"},
+        {"name": "Read-only GPU research worker", "status": "PLANNED"}
+      ]
+    },
+    {
+      "id": "5",
+      "name": "Redis coordination",
+      "status": "DEFERRED",
+      "items": [
+        {"name": "Reachability and smoke validation", "status": "DONE"},
+        {"name": "Distributed locks and worker leases", "status": "PLANNED"},
+        {"name": "Pub/sub, rate limits and heartbeats", "status": "PLANNED"},
+        {"name": "Enable coordination after burn-in", "status": "DEFERRED"}
+      ]
+    },
+    {
+      "id": "6",
+      "name": "Security and access",
+      "status": "ACTIVE/PARTIAL",
+      "items": [
+        {"name": "Application authentication and TLS", "status": "PARTIAL"},
+        {"name": "CSRF and origin protection", "status": "PARTIAL"},
+        {"name": "Comms-01 Signal identity and scoped 2FA", "status": "ACTIVE"},
+        {"name": "Reverse proxy, RBAC and audit controls", "status": "PLANNED"},
+        {"name": "MFA/passkeys and secrets manager", "status": "NOT_STARTED"},
+        {"name": "External/cloud exposure", "status": "DEFERRED"}
+      ]
+    },
+    {
+      "id": "7",
+      "name": "Comms and PMO",
+      "status": "ACTIVE/PARTIAL",
+      "items": [
+        {"name": "Comms UI and PostgreSQL-backed reports", "status": "PARTIAL"},
+        {"name": "Date isolation, calendar and scheduler", "status": "PARTIAL"},
+        {"name": "PMO page and saved notes/project steps", "status": "ACTIVE"},
+        {"name": "Comms-01 controller, Signal and 2FA", "status": "ACTIVE"},
+        {"name": "Jira/Confluence evidence integration", "status": "NOT_STARTED"},
+        {"name": "Operational command center", "status": "PLANNED"}
+      ]
+    },
+    {
+      "id": "8",
+      "name": "Strategy research and dynamic presets",
+      "status": "ACTIVE/PARTIAL",
+      "items": [
+        {"name": "Dynamic presets remain shadow-only", "status": "DONE"},
+        {"name": "Static/dynamic paired evaluation", "status": "PARTIAL"},
+        {"name": "Regime Guard lookahead and M1 evidence", "status": "ACTIVE"},
+        {"name": "Walk-forward, DSR/PBO and promotion gates", "status": "NOT_STARTED"},
+        {"name": "GPU research workers", "status": "PLANNED"}
+      ]
+    },
+    {
+      "id": "9",
+      "name": "Hermes and local AI",
+      "status": "ACTIVE/PARTIAL",
+      "items": [
+        {"name": "Hermes-compatible Comms-01 adapter", "status": "DONE"},
+        {"name": "Actual Hermes desktop/gateway installation", "status": "NOT_STARTED"},
+        {"name": "3090 local model server", "status": "NOT_STARTED"},
+        {"name": "Internal GUI and model fallback routing", "status": "NOT_STARTED"},
+        {"name": "Sandboxed tools, memory and private messaging", "status": "PARTIAL"}
+      ]
+    },
+    {
+      "id": "10",
+      "name": "Cloud, scale and disaster recovery",
+      "status": "PLANNED/PARTIAL",
+      "items": [
+        {"name": "Per-user strategy instances and isolation", "status": "NOT_STARTED"},
+        {"name": "Managed PostgreSQL and Redis", "status": "DEFERRED"},
+        {"name": "Private networking and immutable releases", "status": "PLANNED"},
+        {"name": "Horizontal worker scaling", "status": "NOT_STARTED"},
+        {"name": "Failover, failback and restore drills", "status": "PARTIAL"}
+      ]
+    }
+  ],
+  "recommended_order": [
+    "Stabilize and publish the read-only trading-summary contract, including the entry/accounting failure path, before adding more automation.",
+    "Build a reproducible trading staging VM on home05 with separate PostgreSQL, Redis, simulation credentials and exact-SHA promotion gates.",
+    "Add explicit strategy-instance, lease, parity, Redis restart, worker-crash and fencing acceptance gates in staging.",
+    "Separate the UI/API process from the trading engine behind emergency stop/resume controls and a no-broker test adapter.",
+    "Complete Comms-01 actual Hermes installation, internal GUI and 3090 local-model pilot with hosted fallback.",
+    "Finish Alembic/runtime-DDL cleanup, outbox and normalized broker-event accounting.",
+    "Add proxy, RBAC, MFA/passkeys, secrets management and audit controls.",
+    "Complete Comms/PMO, Jira and Confluence operational evidence integration.",
+    "Move isolated research and dynamic-preset workloads to GPU workers with promotion-grade validation.",
+    "Prepare cloud/HA migration only after staging, fencing, restore and worker-failure evidence is sustained."
+  ],
+  "evidence": [
+    "architecture/top-delivery-implementation-spec.md",
+    "architecture/longspan-self-improvement.md",
+    "runs/20260812T000949Z-top0-9c8455e0/artifacts/final-acceptance-9850.json",
+    "runs/20260812T021335Z-9ddce0ea/artifacts/preflight-baseline.json",
+    "runs/20260810T181326Z-comms01-ux-repair/manifest.json",
+    "runs/20260810T050500Z-comms01-repair/manifest.json",
+    "reports/trading-summary-2026-08-10.json"
+  ]
+}

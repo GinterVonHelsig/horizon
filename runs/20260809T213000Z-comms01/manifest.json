@@ -1,0 +1,23 @@
+{
+  "run_id": "20260809T213000Z-comms01",
+  "workflow": "P1-TOP-DELIVERY-COMMS01",
+  "mode": "autonomous",
+  "status": "2fa-local-service-signal-link-pending",
+  "operations_root": "/root/TOP-DELIVERY",
+  "production_mutation": false,
+  "broker_mutation": false,
+  "network_mutation": false,
+  "current_phase": "3B-2fa-local-service",
+  "required_next": "approve-signal-linked-device-then-start-daemon-and-hermes-allowlist",
+  "age_identity": "valid",
+  "age_recipient": "valid",
+  "synology_archive": "verified",
+  "archive_timer": "active",
+  "reviewers": {
+    "claude_opus_5": "pending",
+    "claude_fable_5": "pending",
+    "antigravity_gemini_3_6_flash_high": "cli-verified",
+    "kimi_k3": "pending",
+    "qwen3_8_max": "pending"
+  }
+}

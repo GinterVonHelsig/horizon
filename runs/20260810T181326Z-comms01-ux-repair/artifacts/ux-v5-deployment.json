@@ -1,0 +1,67 @@
+{
+  "artifact_version": 1,
+  "run_id": "20260810T181326Z-comms01-ux-repair",
+  "recorded_at": "2026-08-10T19:33:24Z",
+  "objective": "Deploy the project-status, recommended-order, trading-summary, seven-day low-risk authorization session, and clearer artifact lookup UX to Comms-01.",
+  "source": {
+    "canonical_repository": "/root/TOP-DELIVERY",
+    "implementation_commit": "26840a789aba9cb630ac9b012ed200a790974cac",
+    "project_status_sha256": "783b02b59a75bfe1d2e120e88a70bfbedf155ccd08ba30fcf001d9a41584d770",
+    "trading_summary_sha256": "963847d8ba201c5fe209ca6ae13143acb7168d08542103814fa4e3aefb297740"
+  },
+  "deployed_files": {
+    "controller/controller.py": "25c722c801253402fb9d47249fd27ad4b1ed83b78cfc73339e70b8ec7ff8d5b0",
+    "control-plane/signal_adapter.py": "e45b79a38be134a23f0ccca2158c4a112db4c12017417573e62f1f29460d8e8d",
+    "root/architecture/project-status.json": "783b02b59a75bfe1d2e120e88a70bfbedf155ccd08ba30fcf001d9a41584d770",
+    "root/reports/trading-summary-2026-08-10.json": "963847d8ba201c5fe209ca6ae13143acb7168d08542103814fa4e3aefb297740"
+  },
+  "changes": [
+    "architecture-summary now exposes the evidence-backed master project tree and current reality",
+    "recommended returns the ordered next outcomes",
+    "trading-summary returns a sanitized date-isolated financial and operational report",
+    "commands returns a comma-separated operator command list",
+    "next is the only displayed low-risk queue command; the legacy queue-next-prompt input remains hidden compatibility",
+    "a successful low-risk 2FA authorization establishes a seven-day session scoped only to queueing the next approved prompt",
+    "P0/P1, production database, deployment, broker, network and credential actions remain fresh per-action authorization plus delivery-gate controlled",
+    "artifact lookup remains manifest-declared and read-only; Comms-01 artifact-directory permissions were corrected for the topdelivery service account"
+  ],
+  "validation": {
+    "focused_tests": "60 passed",
+    "py_compile": "passed",
+    "json_validation": "passed",
+    "service_units": [
+      "top-delivery-controller.service=active",
+      "top-delivery-signal-adapter.service=active",
+      "top-delivery-hermes.service=active"
+    ],
+    "service_restart_count_after_deploy": 0,
+    "read_only_controller_commands": [
+      "status",
+      "architecture-summary",
+      "recommended",
+      "trading-summary",
+      "artifact lookup"
+    ],
+    "signal_formatter_smoke": "passed",
+    "artifact_lookup_permission_repair": {
+      "before": "run artifact directory was root:root 0750 and unreadable by topdelivery",
+      "after": "current run artifact directory is root:topdelivery 0750 and declared files are root:topdelivery 0640",
+      "controller_lookup": "passed for artifacts/ux-v4-deployment.json and artifacts/ux-v5-deployment.json"
+    }
+  },
+  "rollback": {
+    "path": "/var/lib/top-delivery/backups/comms01-controlplane-v5-pre-20260810T193009Z",
+    "controller_sha256": "c6b029c905abf7a576bb86a291f04d1927af7a14f77c5734bda8392346be1b54",
+    "signal_adapter_sha256": "6b6418f56cf73740894f942e5289275cda70b739a0e93c418b87addf787647ff",
+    "database_backup_sha256": "66e4d5897964c2c97501298eba2568b76a33cf5f24379ab437a662e25a373906"
+  },
+  "safety": {
+    "production_trading_touched": false,
+    "broker_state_touched": false,
+    "ledger_touched": false,
+    "production_database_touched": false,
+    "network_state_changed": false,
+    "secrets_published": false
+  },
+  "status": "deployed-and-verified"
+}

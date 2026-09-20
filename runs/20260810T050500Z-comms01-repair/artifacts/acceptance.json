@@ -1,0 +1,120 @@
+{
+  "run_id": "20260810T050500Z-comms01-repair",
+  "recorded_at": "2026-08-10T05:31:00Z",
+  "services": {
+    "top-delivery-auth.service": "active",
+    "top-delivery-supervisor.service": "active",
+    "top-delivery-controller.service": "active",
+    "top-delivery-signal-daemon.service": "active",
+    "top-delivery-signal-adapter.service": "active",
+    "top-delivery-hermes.service": "active"
+  },
+  "sockets": {
+    "controller": "active; read-only status response returned with hashed run-scoped evidence",
+    "hermes_compatible": "active; read-only status response returned with hashed run-scoped evidence",
+    "socket_permissions": "topdelivery:topdelivery 0660",
+    "signal_rpc": "127.0.0.1:8080",
+    "authorization_api": "127.0.0.1:8787"
+  },
+  "implementation": {
+    "canonical_top_delivery_commit": "e6b41b6accc305c354868e36e7b01340d6fdefd7",
+    "reviewed_release_head_sha": "5499b47bc9ac9b8a45b79df291123aec8e969544",
+    "merged_release_sha": "552f732c2e61a3ad7ed3feb69ff8bb59b129bcb7",
+    "deployed_file_sha256": {
+      "controller/controller.py": "3f4f73851c91b958ab9430e0b5748d830b9e8135dc88ed01318716ee1dc1b8bd",
+      "controller/controller_socket.py": "4b3a6d0993bb0b671c2557122241d99175c94b285dba49b5ef1c64461fae2d6b",
+      "controller/top_delivery_controller.py": "101618d585a507c329d78752cb289f2be182af69f1c11b98e8c4a25a1b0cbe4c",
+      "controller/supervisor.py": "19e7cd7040d7e0959cefeb3b3b5023ba79be616a4dd9cfdd0d9ebcca224f8e37",
+      "controller/supervisor_cli.py": "71f529e66bf6725651f10425af032d13cc2955895c33bfe2889cbdb6eadcc9be",
+      "control-plane/signal_adapter.py": "70faff0a805cec887c8aec352fe8bb6d160725aabebe090178d6e44d45c586f4",
+      "control-plane/hermes_adapter.py": "2412992d82c1e25dec703e7891dfae4040ef7bde039cda99786243f641335f34",
+      "control-plane/signal_bridge.py": "a0d39c43ad4e3c4e5215a1e9b66fe734e03dfbe5a15cff0182382f1b72c537db",
+      "control-plane/authorization.py": "ef63f72a45a5dcc43f504967734b024ca8eab0918722376dd646a8e89dfc2880",
+      "systemd/top-delivery-hermes.service": "1e989ea681d7e298f0d7eb0f1b1f31413cfb7723939632ab40c3a7c356d1b2b6"
+    },
+    "deployed_controller_sha256": "3f4f73851c91b958ab9430e0b5748d830b9e8135dc88ed01318716ee1dc1b8bd",
+    "deployed_signal_adapter_sha256": "70faff0a805cec887c8aec352fe8bb6d160725aabebe090178d6e44d45c586f4",
+    "artifact_resolution": "root-relative and run-manifest-relative declarations supported; live status hash verified",
+    "signal_receive": "single-account RPC corrected; account field omitted from receive call",
+    "identity": "allowlisted sender and pinned identity fingerprint",
+    "group_messages": "rejected",
+    "unknown_senders": "rejected",
+    "read_only_commands": [
+      "status",
+      "architecture-summary",
+      "active-runs",
+      "latest-evidence",
+      "next-step",
+      "artifact lookup"
+    ],
+    "2fa_commands": [
+      "queue-next-prompt",
+      "authorize <challenge> <action-hash> <six-digit-code>"
+    ],
+    "authorized_action_effect": "durable pending-parent intent only; no executor in the transport service",
+    "hermes": "local Unix-socket command adapter; no model runner or TCP listener"
+  },
+  "tests": {
+    "signal_adapter": "6 passed",
+    "signal_bridge": "6 passed",
+    "parent_scheduler": "3 passed",
+    "controller_and_control_plane": "42 passed",
+    "compileall": "passed",
+    "systemd_unit_review": "remote units installed; local verifier lacks /usr/local/bin/signal-cli"
+  },
+  "reviews": {
+    "claude_opus_5": "complete; request_changes findings preserved",
+    "fable_5": "complete; conditional_approve findings preserved",
+    "claude_artifact": "artifacts/claude-opus-review.json",
+    "fable_artifact": "artifacts/fable-review.json",
+    "claude_rereview": "complete; conditional_approve_no_blockers",
+    "fable_rereview": "complete after retry; PASS_NO_ENGINEERING_BLOCKERS",
+    "claude_rereview_artifact": "artifacts/claude-opus-rereview.json",
+    "fable_rereview_artifact": "artifacts/fable-rereview.json"
+  },
+  "restart_recovery": {
+    "services_restarted": true,
+    "supervisor_pid_before": 17627,
+    "supervisor_pid_after": 17664,
+    "supervisor_events_before": 7,
+    "supervisor_events_after": 8,
+    "result": "pass",
+    "cold_boot_at": "2026-08-10T05:23:07Z",
+    "cold_boot": "pass; six enabled services active, NRestarts=0, both sockets recreated as topdelivery:topdelivery 0660",
+    "post_boot_status_evidence_sha256": "8155cd7f152e4faed597d02a50261eb3632a92231619d6e8ca33566030aacc5b"
+  },
+  "backup_restore": {
+    "encrypted_archive": "top-delivery-20260810T050500Z.tar.gz.age",
+    "synology_path": "/mnt/pve/synology/TOP-DELIVERY/backups/top-delivery-20260810T050500Z.tar.gz.age",
+    "sha256": "e3e76b7f22e110629828ae31c725f4c8f4cc751463adf2e51ec939ff5525da28",
+    "restore_rehearsal": "pass",
+    "pre_change_control_plane_backup": "comms01-pre-031b6f7d.tar.gz",
+    "pre_change_control_plane_backup_sha256": "9bff648c73dfda172004ccad8f36f5defd606ec067b3ef5afac756211f688519",
+    "private_identity_copied_to_comms": false
+  },
+  "safety": {
+    "broker_orders": 0,
+    "ledger_mutations": 0,
+    "production_database_mutations": 0,
+    "network_changes": 0,
+    "prior_runs_changed": 0
+  },
+  "repository_transport": {
+    "remote": "https://github.com/GinterVonHelsig/TOP-DELIVERY.git",
+    "pull_request": 1,
+    "head_sha": "5499b47bc9ac9b8a45b79df291123aec8e969544",
+    "merge_sha": "552f732c2e61a3ad7ed3feb69ff8bb59b129bcb7",
+    "force_push": false,
+    "origin_main_equivalence": "exact merge tree verified",
+    "production_deployment": "not applicable; Comms-01 control-plane only"
+  },
+  "remaining": {
+    "signal_inbound_round_trip": "pending operator message 'status'",
+    "signal_2fa_round_trip": "pending operator challenge/code response",
+    "signal_identity_trust": "TRUSTED_UNVERIFIED; exact fingerprint pinned",
+    "cold_boot": "complete; post-boot service/socket verification passed",
+    "external_reviews": "Claude/Fable initial and post-remediation reviews complete; findings preserved",
+    "exact_merge": "complete; PR #1 merged non-force as 552f732c2e61a3ad7ed3feb69ff8bb59b129bcb7",
+    "full_model_executor": "deferred; TOP-DELIVERY remains release-authority-free"
+  }
+}

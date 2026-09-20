@@ -1,0 +1,51 @@
+{
+  "vm": {
+    "id": 9104,
+    "name": "comms-01",
+    "node": "home05",
+    "ip": "192.168.0.91",
+    "static_network": true,
+    "ssh": true,
+    "console": "vga",
+    "serial0": false,
+    "kvm": true,
+    "machine": "q35",
+    "hostpci": "0000:0b:00"
+  },
+  "host": {
+    "name": "home05",
+    "ip": "192.168.0.49",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "svm": true
+  },
+  "guest": {
+    "os": "Debian 13",
+    "kernel": "6.12.101+deb13-cloud-amd64",
+    "nvidia_driver": "550.163.01",
+    "nvidia_smi": "passed",
+    "qemu_guest_agent": "configured",
+    "python": "3.13",
+    "torch": "2.6.0+cu124",
+    "cuda_runtime": "12.4",
+    "torch_cuda_available": true,
+    "torch_device": "NVIDIA GeForce RTX 3090",
+    "research_venv": "/home/debian/preset-worker-venv",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.5",
+      "pyarrow": "25.0.0",
+      "polars": "1.43.2",
+      "duckdb": "1.5.5",
+      "optuna": "4.9.0",
+      "numba": "0.66.0",
+      "fastapi": "0.141.1",
+      "uvicorn": "0.52.1"
+    }
+  },
+  "scope": {
+    "production_database": false,
+    "broker_access": false,
+    "trading_credentials": false,
+    "network_changes": false
+  }
+}

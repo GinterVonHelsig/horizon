@@ -1,0 +1,41 @@
+{
+  "adapters": [
+    {
+      "id": "codex-cli",
+      "kind": "codex_cli",
+      "provider": "openai",
+      "executable": "/usr/local/bin/codex",
+      "codex_home": "/var/lib/top-delivery/codex",
+      "model": "gpt-5",
+      "credential_env": [],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": ["/opt/top-delivery", "/var/lib/top-delivery"]
+    },
+    {
+      "id": "cursor-cli",
+      "kind": "cursor_cli",
+      "provider": "cursor",
+      "executable": "/usr/bin/cursor-agent",
+      "model": "composer-1",
+      "approval_mode": "never",
+      "credential_env": [],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": ["/opt/top-delivery", "/var/lib/top-delivery"]
+    },
+    {
+      "id": "claude-cli",
+      "kind": "claude_cli",
+      "provider": "anthropic",
+      "executable": "/usr/bin/claude",
+      "model": "claude-opus-4",
+      "permission_mode": "default",
+      "credential_env": [],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": ["/opt/top-delivery", "/var/lib/top-delivery"]
+    }
+  ],
+  "routes": {
+    "default_executor": "cursor-cli",
+    "default_auditor": "claude-cli"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "adapters": [
+    {
+      "id": "cursor-cli",
+      "kind": "cursor_cli",
+      "provider": "cursor",
+      "executable": "/usr/bin/cursor-agent",
+      "model": "composer-2.5",
+      "approval_mode": "never",
+      "credential_env": [],
+      "timeout_seconds": 1800,
+      "allowlisted_env": [
+        "PATH",
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "CURSOR_HOME",
+        "CURSOR_INVOKED_AS"
+      ],
+      "allowed_cwd_roots": [
+        "/opt/top-delivery",
+        "/var/lib/top-delivery",
+        "/opt/operator-harness"
+      ]
+    },
+    {
+      "id": "openrouter-claude-auditor",
+      "kind": "http_openai",
+      "provider": "openrouter",
+      "model": "openai/gpt-5.6-sol",
+      "endpoint": "http://127.0.0.1:18765/v1/chat/completions",
+      "credential_env": [
+        "TOP_DELIVERY_OPENROUTER_RELAY_TOKEN"
+      ],
+      "timeout_seconds": 1800,
+      "allowed_cwd_roots": [
+        "/opt/top-delivery",
+        "/var/lib/top-delivery",
+        "/opt/operator-harness"
+      ],
+      "reasoning_effort": "max",
+      "loopback_only": true,
+      "request_byte_limit": 262144,
+      "response_byte_limit": 1048576
+    }
+  ],
+  "routes": {
+    "default_executor": "cursor-cli",
+    "default_auditor": "openrouter-claude-auditor"
+  }
+}

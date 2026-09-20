@@ -1,0 +1,24 @@
+[Unit]
+Description=TOP-DELIVERY persistent task worker
+After=local-fs.target top-delivery-controller.service
+
+[Service]
+Type=simple
+User=topdelivery
+Group=topdelivery
+ExecStart=/usr/bin/python3 /opt/top-delivery/controller/worker_cli.py
+EnvironmentFile=-/etc/top-delivery/worker.env
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/top-delivery
+ReadWritePaths=/var/lib/top-delivery/runs /var/lib/top-delivery/adapter-runtime
+RuntimeDirectory=top-delivery-worker
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

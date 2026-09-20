@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily encrypted TOP-DELIVERY archive
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+Unit=top-delivery-archive.service
+
+[Install]
+WantedBy=timers.target

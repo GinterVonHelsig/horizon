@@ -1,0 +1,175 @@
+{
+  "manifest_version": 1,
+  "run_id": "20260810T181326Z-comms01-ux-repair",
+  "parent_run_id": "20260810T050500Z-comms01-repair",
+  "created_at": "2026-08-10T18:18:00Z",
+  "status": "completed",
+  "phase": "control-plane-remediation-complete",
+  "objective": "Make Comms-01 Signal command guidance explicit and safe without changing trading authority.",
+  "source": {
+    "base_commit": "75f54187a08ae9ee126a413b060c1fc081cda0e2",
+    "implementation_commit": "5cef52ec66bcf10f9b0c00c2711c1f24618328c3",
+    "formatter_commit": "8125e9aa8a3204e99d0120e2d07f6e54c2ebd180",
+    "ux_v2_commit": "176bf970ca432a53d33a6cb949f73c3209084478",
+    "ux_v3_commit": "12bd9002d7d5a6a946cc36fa2484ab567a1e1ef8",
+    "ux_v4_commit": "78d16394ec0ad8de9de73a4de609ae614a5e72ca",
+    "ux_v5_commit": "26840a789aba9cb630ac9b012ed200a790974cac",
+    "worktree": "/root/.codex/sol-worktrees/20260810T181326Z-comms01-ux-repair",
+    "branch": "sol/20260810T181326Z-comms01-ux-repair"
+  },
+  "scope": {
+    "files": [
+      "controller/controller.py",
+      "control-plane/signal_adapter.py",
+      "control-plane/test_signal_adapter.py",
+      "control-plane/tests/test_controller.py"
+    ],
+    "production_trading_touched": false,
+    "broker_state_touched": false,
+    "ledger_touched": false,
+    "production_database_touched": false,
+    "network_state_changed": false
+  },
+  "artifacts": [
+    "artifacts/final-acceptance.json",
+    "artifacts/ux-v2-deployment.json",
+    "artifacts/ux-v3-deployment.json",
+    "artifacts/ux-v4-deployment.json",
+    "artifacts/ux-v5-deployment.json"
+  ],
+  "evidence": [
+    "artifacts/final-acceptance.json",
+    "artifacts/ux-v4-deployment.json",
+    "artifacts/ux-v5-deployment.json"
+  ],
+  "validation": {
+    "focused_tests": "45 passed",
+    "py_compile": "passed",
+    "diff_check": "passed",
+    "remote_controller_sha256": "99760bfbe644cee0e9dddb66e5e038cd68bdad87e8a6266bc7c7c4813e1ea526",
+    "remote_signal_adapter_sha256": "a127824c58db1d34caf4b1af2fc7c5cc529448c9d23247e336bc992e43d063df",
+    "remote_backup": {
+      "path": "/var/lib/top-delivery/backups/comms01-ux-pre-5cef52e-20260810T181708Z/control-plane-runtime.tar.gz",
+      "sha256": "ec7b65d54528b6bc6344ae0bbed7e9f9e22ee75cd3ba1c2e240ee31e655a75f4"
+    },
+    "services_restarted": [
+      "top-delivery-controller.service",
+      "top-delivery-hermes.service",
+      "top-delivery-signal-adapter.service"
+    ],
+    "services_active_after_restart": true,
+    "restart_count_after_change": 0
+    ,"formatter_validation": {
+      "focused_tests": "52 passed",
+      "py_compile": "passed",
+      "local_signal_adapter_sha256": "8b59a195ec4fdb0989ed025ee90b25b4f661d0d4a8a085688cdf0ca0fd72ae55",
+      "remote_signal_adapter_sha256": "8b59a195ec4fdb0989ed025ee90b25b4f661d0d4a8a085688cdf0ca0fd72ae55",
+      "pre_backup": {
+        "path": "/var/lib/top-delivery/backups/comms01-signal-formatter-pre-20260810T182420Z",
+        "controller_sha256": "99760bfbe644cee0e9dddb66e5e038cd68bdad87e8a6266bc7c7c4813e1ea526",
+        "signal_adapter_sha256": "a127824c58db1d34caf4b1af2fc7c5cc529448c9d23247e336bc992e43d063df"
+      },
+      "restart": {
+        "service": "top-delivery-signal-adapter.service",
+        "active": true,
+        "nrestarts": 0,
+        "controller_untouched": true,
+        "broker_or_ledger_mutation": false
+      }
+    },
+    "ux_v2_validation": {
+      "focused_tests": "54 passed",
+      "py_compile": "passed",
+      "local_signal_adapter_sha256": "1697482789a75919e083c40f715baa0f8bdc0f8bc400e9ba351a13b37d7183c6",
+      "remote_signal_adapter_sha256": "1697482789a75919e083c40f715baa0f8bdc0f8bc400e9ba351a13b37d7183c6",
+      "pre_backup": {
+        "path": "/var/lib/top-delivery/backups/comms01-signal-ux-v2-pre-20260810T183701Z",
+        "signal_adapter_sha256": "8b59a195ec4fdb0989ed025ee90b25b4f661d0d4a8a085688cdf0ca0fd72ae55"
+      },
+      "restart": {
+        "service": "top-delivery-signal-adapter.service",
+        "active": true,
+        "nrestarts": 0,
+        "controller_untouched": true,
+        "broker_or_ledger_mutation": false
+      }
+    },
+    "ux_v3_validation": {
+      "focused_tests": "54 passed",
+      "py_compile": "passed",
+      "local_signal_adapter_sha256": "0da05cfbf3b93ef40519088ebbd8aaa785dcf2f1d02371660e72f79ae089f35d",
+      "remote_signal_adapter_sha256": "0da05cfbf3b93ef40519088ebbd8aaa785dcf2f1d02371660e72f79ae089f35d",
+      "local_authorization_sha256": "6fb6722bd890f09fbe2eeca0dba5fd2e01a2987961bb5f503ecdb036dc2d9f73",
+      "remote_authorization_sha256": "6fb6722bd890f09fbe2eeca0dba5fd2e01a2987961bb5f503ecdb036dc2d9f73",
+      "pre_backup": {
+        "path": "/var/lib/top-delivery/backups/comms01-signal-ux-v3-pre-20260810T185123Z",
+        "signal_adapter_sha256": "1697482789a75919e083c40f715baa0f8bdc0f8bc400e9ba351a13b37d7183c6",
+        "authorization_sha256": "ef63f72a45a5dcc43f504967734b024ca8eab0918722376dd646a8e89dfc2880"
+      },
+      "restart": {
+        "service": "top-delivery-signal-adapter.service",
+        "active": true,
+        "nrestarts": 0,
+        "controller_untouched": true,
+        "broker_or_ledger_mutation": false
+      }
+    },
+    "ux_v4_validation": {
+      "focused_tests": "56 passed",
+      "py_compile": "passed",
+      "diff_check": "passed",
+      "local_signal_adapter_sha256": "6b6418f56cf73740894f942e5289275cda70b739a0e93c418b87addf787647ff",
+      "local_controller_sha256": "c6b029c905abf7a576bb86a291f04d1927af7a14f77c5734bda8392346be1b54",
+      "remote_signal_adapter_sha256": "6b6418f56cf73740894f942e5289275cda70b739a0e93c418b87addf787647ff",
+      "remote_controller_sha256": "c6b029c905abf7a576bb86a291f04d1927af7a14f77c5734bda8392346be1b54",
+      "pre_backup": {
+        "path": "/var/lib/top-delivery/backups/comms01-signal-ux-v4-pre-20260810T190124Z",
+        "signal_adapter_sha256": "0da05cfbf3b93ef40519088ebbd8aaa785dcf2f1d02371660e72f79ae089f35d",
+        "controller_sha256": "99760bfbe644cee0e9dddb66e5e038cd68bdad87e8a6266bc7c7c4813e1ea526"
+      },
+      "services_restarted": [
+        "top-delivery-controller.service",
+        "top-delivery-signal-adapter.service"
+      ],
+      "services_active_after_restart": true,
+      "restart_count_after_change": 0,
+      "direct_controller_status_next_action": "next",
+      "deployed_formatter_smoke": "passed for commands and authorization challenge"
+    },
+    "ux_v5_validation": {
+      "focused_tests": "60 passed",
+      "py_compile": "passed",
+      "json_validation": "passed",
+      "local_controller_sha256": "25c722c801253402fb9d47249fd27ad4b1ed83b78cfc73339e70b8ec7ff8d5b0",
+      "remote_controller_sha256": "25c722c801253402fb9d47249fd27ad4b1ed83b78cfc73339e70b8ec7ff8d5b0",
+      "local_signal_adapter_sha256": "e45b79a38be134a23f0ccca2158c4a112db4c12017417573e62f1f29460d8e8d",
+      "remote_signal_adapter_sha256": "e45b79a38be134a23f0ccca2158c4a112db4c12017417573e62f1f29460d8e8d",
+      "project_status_sha256": "783b02b59a75bfe1d2e120e88a70bfbedf155ccd08ba30fcf001d9a41584d770",
+      "trading_summary_sha256": "963847d8ba201c5fe209ca6ae13143acb7168d08542103814fa4e3aefb297740",
+      "services_active_after_deploy": true,
+      "restart_count_after_deploy": 0,
+      "read_only_commands": ["status", "architecture-summary", "recommended", "trading-summary", "artifact lookup"],
+      "artifact_lookup_permission_repair": "passed; current run artifacts readable by topdelivery and declared lookup verified"
+    }
+  },
+  "acceptance": {
+    "controller_read_only_mode": "passed",
+    "unknown_command_guidance": "passed",
+    "bare_totp_guidance": "passed in isolated tests; full 2FA remains a separate capability outcome",
+    "signal_status_round_trip": "passed; post-deployment operator status received and formatted reply observed",
+    "signal_2fa_round_trip": "deferred to broader Comms-01 capability run; not changed by formatter repair",
+    "outbound_signal_formatting": "passed; post-deployment status rendered as human-readable text",
+    "signal_command_list": "passed; commands renders a comma-separated one-line list",
+    "preferred_next_command": "passed; next creates the existing action-bound challenge",
+    "authorization_prompt_simplicity": "passed; Reply exactly: authorize CODE is one line and replacement guidance is absent",
+    "raw_json_and_html_suppression": "passed in focused tests; non-JSON fallback is safe",
+    "signal_identity": "deferred; TRUSTED_UNVERIFIED remains a separate identity-confirmation item"
+  },
+  "next_action": "next",
+  "next_action_detail": "Continue the broader Comms-01 capability run for live 2FA and identity confirmation; this formatter remediation is complete.",
+  "residuals": [
+    "Live 2FA challenge/authorize round-trip remains unverified in the broader Comms-01 capability run.",
+    "Signal identity remains TRUSTED_UNVERIFIED pending separate out-of-band confirmation."
+  ],
+  "writing_agent": null
+}

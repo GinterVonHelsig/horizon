@@ -1,0 +1,845 @@
+{
+  "schema_version": "master-program.v1",
+  "program_id": "ATS-PROGRAM",
+  "project_version": "1.0.0-draft",
+  "generated_at": "2026-09-09T17:00:29.470951+00:00",
+  "generated_at_us_eastern": "2026-09-09 13:00:29 EDT",
+  "status_vocabulary": [
+    "VERIFIED_CURRENT",
+    "VERIFIED_HISTORICAL",
+    "PARTIAL",
+    "GAP_IDENTIFIED",
+    "UNVERIFIED",
+    "UNVERIFIED_HISTORICAL",
+    "INCONSISTENT",
+    "CANDIDATE_NOT_DEPLOYED",
+    "PROVISIONAL_DESIGN",
+    "UNRESOLVED_CHOICE",
+    "NOT_STARTED",
+    "PLANNED",
+    "ACTIVE",
+    "ACTIVE_PARTIAL",
+    "BASELINE_DRAFT"
+  ],
+  "legacy_section_mappings": {
+    "master_plan_section_0": "ATS-DEL",
+    "master_plan_section_1": "ATS-PROD",
+    "master_plan_section_2": "ATS-DATA",
+    "master_plan_section_3": "ATS-STG",
+    "master_plan_section_4": "ATS-RUN",
+    "master_plan_section_5_security_md": "ATS-SEC",
+    "master_plan_section_5_redis_json": "ATS-DATA-009",
+    "project_status_json_section_5": "ATS-DATA-009",
+    "project_status_json_section_6": "ATS-SEC",
+    "intake_topic_1": "ATS-PMO",
+    "intake_topic_13": "ATS-SCL"
+  },
+  "nodes": [
+    {
+      "node_id": "ATS-PROGRAM",
+      "section_path": "Automated Trading System Program",
+      "parent_id": null,
+      "project_version": "1.0.0-draft",
+      "objective": "Maintain a versioned program tree for the Automated Trading System under Horizon Cascade PMO",
+      "scope_targets": "All managed hosts/repos in master plan; Horizon unavailability must not block ordinary trading runtime",
+      "owner_role": "Horizon Cascade PMO",
+      "dependencies": [],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [
+        "inspection-report.md",
+        "historical-baseline-intake.md"
+      ],
+      "status": "BASELINE_DRAFT",
+      "status_basis": "This delivery produces the first reviewed machine baseline; not runtime qualified",
+      "authority_needed": "Horizon v1 contract adoption envelope",
+      "existing_run_links": [
+        "goal-3eb7b972ec15809e",
+        "goal-1a28511b87da6c2f"
+      ],
+      "resume_pointer": null,
+      "next_action": "Adopt baseline after PASS_HORIZON_V1_BASELINE_REVIEWED",
+      "completion_receipt": null,
+      "legacy_mappings": {
+        "master_plan_section_0": "ATS-DEL",
+        "master_plan_section_1": "ATS-PROD",
+        "master_plan_section_2": "ATS-DATA",
+        "master_plan_section_3": "ATS-STG",
+        "master_plan_section_4": "ATS-RUN",
+        "master_plan_section_5_security_md": "ATS-SEC",
+        "master_plan_section_5_redis_json": "ATS-DATA-009",
+        "project_status_json_section_5": "ATS-DATA-009",
+        "project_status_json_section_6": "ATS-SEC",
+        "intake_topic_1": "ATS-PMO",
+        "intake_topic_13": "ATS-SCL"
+      }
+    },
+    {
+      "node_id": "ATS-PMO",
+      "section_path": "1. PMO \u2014 Horizon goal registry and recovery",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Horizon goal registry and recovery work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Horizon Cascade / parent controller",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-DEL",
+      "section_path": "2. DELIVERY \u2014 Gateway and execution profiles",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Gateway and execution profiles work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Gateway Delivery coordinator",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-COM",
+      "section_path": "3. COMMS \u2014 Harness, Signal, auth correlation",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Harness, Signal, auth correlation work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Communications gateway + auth",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-LAB",
+      "section_path": "4. LAB \u2014 Proxmox inventory and host reliability",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Proxmox inventory and host reliability work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Infrastructure operator",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PROD",
+      "section_path": "5. PROD \u2014 Production reproducibility",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Production reproducibility work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Production release owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-DATA",
+      "section_path": "6. DATA \u2014 PostgreSQL, schema, outbox",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close PostgreSQL, schema, outbox work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Database architecture owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-STG",
+      "section_path": "7. STAGING \u2014 Eight-VM delivery qualification",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Eight-VM delivery qualification work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Staging train owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-RUN",
+      "section_path": "8. RUNTIME \u2014 UI/API/strategy/venue boundaries",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close UI/API/strategy/venue boundaries work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Runtime architecture owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-SEC",
+      "section_path": "9. SECURITY \u2014 Identity, audit, exposure",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Identity, audit, exposure work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Security owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-RES",
+      "section_path": "10. RESEARCH \u2014 ORB, Regime Guard, presets",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close ORB, Regime Guard, presets work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Research owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-CMP",
+      "section_path": "11. COMPUTE \u2014 GPU/local model research",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close GPU/local model research work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Compute owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-OPS",
+      "section_path": "12. OPERATIONS \u2014 Monitoring, DR, evidence",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Monitoring, DR, evidence work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Operations owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-SCL",
+      "section_path": "13. SCALE \u2014 Multi-user, HA, cloud",
+      "parent_id": "ATS-PROGRAM",
+      "objective": "Track and close Multi-user, HA, cloud work under Horizon",
+      "scope_targets": "See child leaves",
+      "owner_role": "Scale owner",
+      "dependencies": [
+        "ATS-PROGRAM"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md@draft",
+      "evidence_references": [],
+      "status": "PARTIAL",
+      "status_basis": "Intake topic mapped; combines unverified historical claims with partial current evidence",
+      "authority_needed": "Per-leaf envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Decompose into verifiable leaves",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PMO-001",
+      "section_path": "1.PMO/Goal registry and project versions",
+      "parent_id": "ATS-PMO",
+      "objective": "Durable versioned project nodes with stable IDs and acceptance versions",
+      "scope_targets": "Comms-01 controller PostgreSQL; /opt/top-delivery-p1/current",
+      "owner_role": "Horizon parent controller",
+      "dependencies": [
+        "ATS-DEL-001"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#project-node-identity",
+      "evidence_references": [
+        "inspection-report.md#project-continuity"
+      ],
+      "status": "GAP_IDENTIFIED",
+      "status_basis": "prompt_ingest lacks project_id/version fields per inspection",
+      "authority_needed": "implementation envelope for controller schema",
+      "existing_run_links": [
+        "goal-3eb7b972ec15809e"
+      ],
+      "resume_pointer": "Resume after pin/skip conflict remediated",
+      "next_action": "Design project ledger tables and ingest contract",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PMO-002",
+      "section_path": "1.PMO/Automatic prerequisite handling",
+      "parent_id": "ATS-PMO",
+      "objective": "Reuse or deliver authorized prerequisites without prompt churn",
+      "scope_targets": "Horizon controller; Gateway manifests",
+      "owner_role": "Horizon Cascade PMO",
+      "dependencies": [
+        "ATS-DEL-001",
+        "ATS-COM-002"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#automatic-prerequisites",
+      "evidence_references": [
+        "historical-baseline-intake.md#accepted-operator-decisions"
+      ],
+      "status": "PROVISIONAL_DESIGN",
+      "status_basis": "Operator preference recorded; demonstration NOT_INVOKED",
+      "authority_needed": "bounded demonstration envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Execute demonstration-prompt-NOT_INVOKED.md after implementation",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PMO-002-PREFLIGHT",
+      "section_path": "1.PMO/Automatic prerequisite handling/demo preflight",
+      "parent_id": "ATS-PMO-002",
+      "objective": "Demo preflight artifact required before ATS-PMO-002-DEMO closure",
+      "scope_targets": "Horizon demo fixture only",
+      "owner_role": "Horizon Cascade PMO",
+      "dependencies": [],
+      "acceptance_criteria_version": "horizon-v1-contract.md#automatic-prerequisites-demo-preflight",
+      "evidence_references": [
+        "20260910T-horizon-prereq-and-correlation-NOT_AUTHORIZED/"
+      ],
+      "status": "DEMO_FIXTURE",
+      "status_basis": "Demo-only node; absent from production master-program-v1.json",
+      "authority_needed": "bounded demonstration envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Satisfy automatically or via gateway child under same run_id",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PMO-002-DEMO",
+      "section_path": "1.PMO/Automatic prerequisite handling/demo node",
+      "parent_id": "ATS-PMO-002",
+      "objective": "Demonstrate automatic prerequisite delivery without operator re-prompt",
+      "scope_targets": "Horizon demo fixture only",
+      "owner_role": "Horizon Cascade PMO",
+      "dependencies": [
+        "ATS-PMO-002-PREFLIGHT"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#automatic-prerequisites-demo",
+      "evidence_references": [
+        "20260910T-horizon-prereq-and-correlation-NOT_AUTHORIZED/"
+      ],
+      "status": "DEMO_FIXTURE",
+      "status_basis": "Demo-only node; depends on ATS-PMO-002-PREFLIGHT",
+      "authority_needed": "bounded demonstration envelope",
+      "existing_run_links": [
+        "goal-3eb7b972ec15809e"
+      ],
+      "resume_pointer": null,
+      "next_action": "Close after durable prerequisite decision and subworkflow child",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PMO-003",
+      "section_path": "1.PMO/Parent run inventory and resume policy",
+      "parent_id": "ATS-PMO",
+      "objective": "Explicit lifecycle for historical runs; no silent replacement",
+      "scope_targets": "Comms-01 skip list; /var/lib/top-delivery/runs",
+      "owner_role": "Horizon PMO",
+      "dependencies": [],
+      "acceptance_criteria_version": "horizon-v1-contract.md#run-identity",
+      "evidence_references": [
+        "PASS_PIN_BACK_3EB7.json",
+        "NEXT_FIVE_PROMPTS.md"
+      ],
+      "status": "PARTIAL",
+      "status_basis": "goal-3eb7 pinned and skipped; goal-1a28511b87da6c2f owns staging history",
+      "authority_needed": "Class B remediation on same run_id",
+      "existing_run_links": [
+        "goal-3eb7b972ec15809e",
+        "goal-1a28511b87da6c2f",
+        "goal-2b3738cc2985e7bb"
+      ],
+      "resume_pointer": "goal-3eb7b972ec15809e",
+      "next_action": "Remediate BLOCKED_WORKER_RUN_ID_PIN without new parent submit",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-DEL-001",
+      "section_path": "2.DELIVERY/Gateway phase and release gates",
+      "parent_id": "ATS-DEL",
+      "objective": "Gateway owns phases 0-7.5; cannot self-approve acceptance",
+      "scope_targets": "Gateway Delivery skill; model-routing.yaml",
+      "owner_role": "Gateway Delivery",
+      "dependencies": [],
+      "acceptance_criteria_version": "gateway-delivery/SKILL.md",
+      "evidence_references": [
+        "/opt/top-delivery-p1/current/architecture/model-routing.yaml"
+      ],
+      "status": "ACTIVE_PARTIAL",
+      "status_basis": "Skill and routing deployed; independence remaps documented",
+      "authority_needed": "none for documentation baseline",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Keep Gateway as middle authority in Horizon contract",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-DEL-002",
+      "section_path": "2.DELIVERY/Subworkflow handoff for capability gaps",
+      "parent_id": "ATS-DEL",
+      "objective": "Materialize remediation_task into supervised provider work",
+      "scope_targets": "TOP-DELIVERY controller candidate path",
+      "owner_role": "Gateway + parent controller",
+      "dependencies": [
+        "ATS-DEL-001"
+      ],
+      "acceptance_criteria_version": "subworkflow-handoff-spec.md",
+      "evidence_references": [
+        "20260903T-gateway-subworkflow-handoff-design/"
+      ],
+      "status": "CANDIDATE_NOT_DEPLOYED",
+      "status_basis": "subworkflow_handoff.py absent from deployed d7305d4f tree",
+      "authority_needed": "implementation envelope 3A+",
+      "existing_run_links": [
+        "goal-1a28511b87da6c2f"
+      ],
+      "resume_pointer": "20260903T-gateway-subworkflow-handoff-design",
+      "next_action": "Implement and deploy handoff module in isolated worktree",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-COM-001",
+      "section_path": "3.COMMS/Authenticated status and Q&A correlation",
+      "parent_id": "ATS-COM",
+      "objective": "Durable correlation across harnesses and Signal",
+      "scope_targets": "top-delivery-auth.service; signal adapter; host gateway",
+      "owner_role": "Communications owner",
+      "dependencies": [
+        "ATS-SEC-001"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#communication",
+      "evidence_references": [
+        "inspection-report.md#delegation-and-messaging"
+      ],
+      "status": "PARTIAL",
+      "status_basis": "Services active; unified correlation contract not proven",
+      "authority_needed": "messaging implementation envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Define correlation IDs and deduplication policy",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-COM-002",
+      "section_path": "3.COMMS/2FA and grant expiry policy",
+      "parent_id": "ATS-COM",
+      "objective": "Record operator choices for grant TTL and reuse semantics",
+      "scope_targets": "/opt/top-delivery-auth",
+      "owner_role": "Auth owner",
+      "dependencies": [],
+      "acceptance_criteria_version": "horizon-v1-contract.md#auth-policy-unresolved",
+      "evidence_references": [
+        "historical-baseline-intake.md"
+      ],
+      "status": "UNRESOLVED_CHOICE",
+      "status_basis": "24h vs 48h and reusable grant semantics not selected",
+      "authority_needed": "operator decision card",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Propose policy; do not mutate live auth in baseline delivery",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-LAB-001",
+      "section_path": "4.LAB/Proxmox inventory and capacity",
+      "parent_id": "ATS-LAB",
+      "objective": "Maintain vendor-neutral staging/production placement rules",
+      "scope_targets": "Proxmox home03-home07; Comms-01/02",
+      "owner_role": "Lab operator",
+      "dependencies": [],
+      "acceptance_criteria_version": "staging-as-built-20260905.md",
+      "evidence_references": [
+        "staging-as-built-20260905.md"
+      ],
+      "status": "VERIFIED_CURRENT",
+      "status_basis": "Eight staging VMs 9010-9017 running per Sept 5/9 evidence",
+      "authority_needed": "read-only inventory checks",
+      "existing_run_links": [
+        "goal-1a28511b87da6c2f"
+      ],
+      "resume_pointer": null,
+      "next_action": "Continue capacity measurement before resize",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-LAB-002",
+      "section_path": "4.LAB/Horizon and lab maintenance workstream",
+      "parent_id": "ATS-LAB",
+      "objective": "Track ongoing Comms host upgrades as first-class program work",
+      "scope_targets": "Comms-01 VM 9104; Comms-02",
+      "owner_role": "Lab operator",
+      "dependencies": [
+        "ATS-LAB-001"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#lab-maintenance",
+      "evidence_references": [
+        "historical-baseline-intake.md#accepted-operator-decisions"
+      ],
+      "status": "ACTIVE",
+      "status_basis": "Operator decision: lab maintenance is in-scope for Horizon PMO",
+      "authority_needed": "routine home-lab envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Schedule non-production maintenance nodes under ATS-LAB",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PROD-001",
+      "section_path": "5.PROD/Service active from /home/trading",
+      "parent_id": "ATS-PROD",
+      "objective": "Production trading service runs from canonical path",
+      "scope_targets": "VM 9005 /home/trading; livetrading-ssl.service",
+      "owner_role": "Production operator",
+      "dependencies": [],
+      "acceptance_criteria_version": "project-status.json#section-1",
+      "evidence_references": [
+        "inspection-report.md#production-vm-9005"
+      ],
+      "status": "VERIFIED_CURRENT",
+      "status_basis": "livetrading-ssl.service active on 2026-09-09",
+      "authority_needed": "production change envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Do not conflate service uptime with PMO completion",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-PROD-002",
+      "section_path": "5.PROD/Clean reproducible release checkout",
+      "parent_id": "ATS-PROD",
+      "objective": "Running source matches reviewed commit with manifest",
+      "scope_targets": "GinterVonHelsig/trading; VM 9005",
+      "owner_role": "Production release owner",
+      "dependencies": [
+        "HIST-02"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#target-identity",
+      "evidence_references": [
+        "inspection-report.md"
+      ],
+      "status": "INCONSISTENT",
+      "status_basis": "HEAD 86c9c147 with local modifications",
+      "authority_needed": "production reproducibility envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Inventory runtime vs git before next promotion",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-DATA-001",
+      "section_path": "6.DATA/PostgreSQL production authority",
+      "parent_id": "ATS-DATA",
+      "objective": "PostgreSQL is books; SQLite dev/test only",
+      "scope_targets": "postgres-01; VM 9005 app",
+      "owner_role": "Database owner",
+      "dependencies": [],
+      "acceptance_criteria_version": "project-status.json#section-2",
+      "evidence_references": [
+        "historical-baseline-intake.md#early-cutover"
+      ],
+      "status": "VERIFIED_HISTORICAL",
+      "status_basis": "Cutover reported done; identity not re-audited this run",
+      "authority_needed": "database audit envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Verify connection targets before migration work",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-DATA-002",
+      "section_path": "6.DATA/Alembic-only schema ownership",
+      "parent_id": "ATS-DATA",
+      "objective": "Remove runtime DDL competition",
+      "scope_targets": "trading + TOP-DELIVERY migrations",
+      "owner_role": "Database owner",
+      "dependencies": [
+        "HIST-07"
+      ],
+      "acceptance_criteria_version": "HIST-07 verification method",
+      "evidence_references": [
+        "project-status.json"
+      ],
+      "status": "UNVERIFIED",
+      "status_basis": "HIST-07 open",
+      "authority_needed": "schema remediation envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Schema ownership inventory",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-STG-001",
+      "section_path": "7.STAGING/Eight-VM topology operational",
+      "parent_id": "ATS-STG",
+      "objective": "Staging cells running with NATS+PostgreSQL split",
+      "scope_targets": "VMs 9010-9017",
+      "owner_role": "Staging train owner",
+      "dependencies": [
+        "ATS-LAB-001"
+      ],
+      "acceptance_criteria_version": "PASS_STAGING_READY scope from goal-1a28511b87da6c2f",
+      "evidence_references": [
+        "staging-as-built-20260905.md",
+        "inspection-report.md"
+      ],
+      "status": "PARTIAL",
+      "status_basis": "Infra proof exists; full app runtime not migrated",
+      "authority_needed": "staging implementation envelopes",
+      "existing_run_links": [
+        "goal-1a28511b87da6c2f"
+      ],
+      "resume_pointer": "goal-1a28511b87da6c2f",
+      "next_action": "Qualify application coverage per cell",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-STG-002",
+      "section_path": "7.STAGING/Promotion gates to production",
+      "parent_id": "ATS-STG",
+      "objective": "Separate identities; no uncontrolled guest copy cutover",
+      "scope_targets": "staging -> VM 9005",
+      "owner_role": "Release owner",
+      "dependencies": [
+        "ATS-STG-001",
+        "ATS-PROD-002"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#promotion",
+      "evidence_references": [
+        "inspection-report.md#staging-reality"
+      ],
+      "status": "NOT_STARTED",
+      "status_basis": "Promotion contract documented only",
+      "authority_needed": "production promotion envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Define exact-SHA promotion after staging app parity",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-RUN-001",
+      "section_path": "8.RUNTIME/UI-API vs engine separation",
+      "parent_id": "ATS-RUN",
+      "objective": "Independent deployment and failure isolation",
+      "scope_targets": "Future staging cells; current colocated prod",
+      "owner_role": "Runtime architect",
+      "dependencies": [],
+      "acceptance_criteria_version": "PRODUCTION-SPLIT-TARGET-ARCHITECTURE.md",
+      "evidence_references": [
+        "master plan section 4"
+      ],
+      "status": "NOT_STARTED",
+      "status_basis": "Partial colocation on VM 9005; separation not started",
+      "authority_needed": "architecture implementation envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Prove contracts in staging first",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-SEC-002",
+      "section_path": "9.SECURITY/Audit and tenant isolation controls",
+      "parent_id": "ATS-SEC",
+      "objective": "Audit trails and tenant boundaries for multi-user future",
+      "scope_targets": "Application and controller layers",
+      "owner_role": "Security owner",
+      "dependencies": [
+        "ATS-SEC-001"
+      ],
+      "acceptance_criteria_version": "master plan section 5",
+      "evidence_references": [
+        "project-status.json#section-6"
+      ],
+      "status": "PLANNED",
+      "status_basis": "RBAC and audit controls planned not proven",
+      "authority_needed": "security implementation envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Define audit event schema before scale work",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-SEC-001",
+      "section_path": "9.SECURITY/Comms-01 Signal and scoped 2FA",
+      "parent_id": "ATS-SEC",
+      "objective": "Authenticated operator paths without exposing secrets",
+      "scope_targets": "top-delivery-auth.service; signal services",
+      "owner_role": "Security owner",
+      "dependencies": [
+        "ATS-COM-002"
+      ],
+      "acceptance_criteria_version": "project-status.json#section-6",
+      "evidence_references": [
+        "inspection-report.md"
+      ],
+      "status": "ACTIVE",
+      "status_basis": "Auth app SHA unchanged; egress disabled on controller pin",
+      "authority_needed": "auth merge envelope (F5)",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Surgical auth merge per NEXT_FIVE_PROMPTS item 2",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-RES-001",
+      "section_path": "10.RESEARCH/Shadow-only dynamic presets",
+      "parent_id": "ATS-RES",
+      "objective": "Presets remain shadow until promotion gates pass",
+      "scope_targets": "Research pipeline",
+      "owner_role": "Research owner",
+      "dependencies": [],
+      "acceptance_criteria_version": "project-status.json#section-8",
+      "evidence_references": [
+        "historical-baseline-intake.md#profitability"
+      ],
+      "status": "VERIFIED_HISTORICAL",
+      "status_basis": "Shadow-only reported in project-status",
+      "authority_needed": "research envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Treat meta-labeling as hypotheses not prerequisites",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-OPS-001",
+      "section_path": "12.OPERATIONS/Off-site project state restore",
+      "parent_id": "ATS-OPS",
+      "objective": "Horizon project ledger and evidence recoverable off-site",
+      "scope_targets": "Synology NFS; artifact roots",
+      "owner_role": "Operations owner",
+      "dependencies": [
+        "ATS-LAB-001"
+      ],
+      "acceptance_criteria_version": "horizon-v1-contract.md#restore",
+      "evidence_references": [
+        "F8 spec reference in NEXT_FIVE_PROMPTS"
+      ],
+      "status": "PLANNED",
+      "status_basis": "F8 Synology backup spec exists; not executed",
+      "authority_needed": "F8 disposable envelope",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Implement backup cycle under separate authorized run",
+      "completion_receipt": null
+    },
+    {
+      "node_id": "ATS-SCL-001",
+      "section_path": "13.SCALE/Multi-user and HA validation",
+      "parent_id": "ATS-SCL",
+      "objective": "Capacity and failover evidence before scale claims",
+      "scope_targets": "Future cloud/HA targets",
+      "owner_role": "Scale owner",
+      "dependencies": [
+        "ATS-STG-002",
+        "ATS-RUN-001"
+      ],
+      "acceptance_criteria_version": "master plan section 8",
+      "evidence_references": [
+        "intake topic 13"
+      ],
+      "status": "PLANNED",
+      "status_basis": "No scale guarantee from rough user count",
+      "authority_needed": "future scale envelopes",
+      "existing_run_links": [],
+      "resume_pointer": null,
+      "next_action": "Defer until staging/production gates green",
+      "completion_receipt": null
+    }
+  ],
+  "closed_status_vocabulary_contract": "All status strings MUST be members of status_vocabulary; ad-hoc statuses are out of contract"
+}
