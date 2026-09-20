@@ -1,0 +1,29 @@
+# TEMPLATE ONLY — render exact approved paths/identity; never install from tests.
+[Unit]
+Description=TOP-DELIVERY host submission compatibility service (Comms Relay boundary)
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=topdelivery
+ExecStart=/APPROVED/PYTHON -I /APPROVED/RELEASE/bin/top-delivery-host-gateway-server --config /APPROVED/CONSUMER.json
+Restart=on-failure
+RestartSec=2
+RestartPreventExitStatus=78
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/APPROVED/RELEASE /APPROVED/CONSUMER.json /opt/operator-harness/prompts /etc/top-delivery
+ReadWritePaths=/run/top-delivery-host-gateway /var/lib/top-delivery/submission-transport
+RuntimeDirectory=top-delivery-host-gateway
+RuntimeDirectoryMode=0770
+StateDirectory=top-delivery/submission-transport
+StateDirectoryMode=0700
+RestrictAddressFamilies=AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

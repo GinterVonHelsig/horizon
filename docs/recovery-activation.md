@@ -65,10 +65,11 @@ The two existing submission paths serve submission, **not delivery execution**:
 | top-delivery-host-gateway.service, `/usr/local/lib/top_delivery_host_gateway/server.py`, client `/opt/operator-harness/bin/top-delivery-host-gateway`, socket `/run/top-delivery-host-gateway/gateway.sock` | `/opt/top-delivery-p1/current/controller/goal_cli.py` | Bind/reverify against the approved release and consistent run/artifact configuration; test inspect/reject/submit argv in staging |
 | `/usr/local/sbin/top-delivery-submit` importing `/usr/local/lib/top-delivery/comms01_submit_gateway.py` | old d7305d4f41ccb7ca451873a5ebe3ece89636fbc5 controller pin | Prepare a reviewed version-controlled wrapper/module correction pointing at the same approved release manifest; no old pin or arbitrary checkout fallback |
 
-The installed transport sources still need their own provenance-recorded package
-and fake systemd-run/goal_cli consumer tests before those installed submission
-corrections can be applied. This reviewer package does not implement or certify
-that separate transport correction. Preserve peer credentials, prompt allowlist,
+The source-owned transport package and fake systemd-run/goal_cli consumer tests
+now exist; see submission-release-package.md. Both paths select one pinned release
+and share a durable no-replay journal. Installation and real consumer cutover remain
+deferred deployment. Simulated children do not certify the host systemd attestation
+boundary or live execution. Preserve peer credentials, prompt allowlist,
 digest/attestation gates, service/socket/API/readiness compatibility and ownership.
 The readiness enabled flag alone is not execution readiness. Do not rename deployed
 communications resources. Comms Relay naming migration is described separately in
@@ -95,6 +96,8 @@ writable under ProtectSystem=strict through exact writable-path declarations,
 without broad permissions, ownership or lease-fencing exceptions. Preserve durable
 health counters and intent/history paths across version changes. Reconcile queued
 retries with existing intents; uncertain effects require review, never intent deletion.
+Provision the submission-journal directory0700 using the staged service template
+with approved paths and resolved UID/GID. Retain it during cutover and rollback.
 
 ## Separately authorized migration and activation sequence
 

@@ -114,9 +114,9 @@ manifest, stage an immutable release, provision its reviewed source-anchor entri
 rehearse the exact live-stack migration on a source-reconstructed disposable
 database (not a production-data clone), configure explicit supported routes and
 keep controller services inactive until acceptance. Installed submission-path and
-review-launcher deployment corrections remain deferred. The reviewer package now
-exists with relocated simulated CLI/consumer tests; the submission transport
-package is a separate remaining preparation item. Do not
+review-launcher deployment corrections remain deferred. Reviewer and submission
+packages now exist with relocated simulated CLI/consumer tests; installed source
+selection and consumer cutover are deployment, not missing package source. Do not
 retarget current as part of this source repair.
 
 Rollback code/config/launcher packaging as a unit to the captured previous pin;

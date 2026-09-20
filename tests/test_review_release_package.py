@@ -51,7 +51,7 @@ print(json.dumps({'type':'result','subtype':'success','is_error':False,
     routing = tmp_path / 'consumer-routing.yaml'
     routing.write_text(yaml.safe_dump(policy))
     config = tmp_path / 'consumer.json'
-    config.write_text(json.dumps({'schema':'horizon-review-consumer.v1','enabled':True,
+    config.write_text(json.dumps({'schema':'horizon-review-consumer.v1','enabled':True,'transport':'cursor',
         'cursor_executable':str(fake),'cursor_sha256':digest(fake),
         'routing_yaml':routing.name,'routing_sha256':digest(routing)}))
     def artifact(name, value):
@@ -88,6 +88,7 @@ def test_packaged_entries_relocate_and_forward_bound_consumer(staged, entry):
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload['provider'] == 'cursor' and payload['model'] == 'Cursor Grok 4.6 High'
+    assert payload['transport'] == 'cursor-agent'
     calls = [json.loads(line) for line in (config.parent / 'calls.jsonl').read_text().splitlines()]
     assert len(calls) == 1
     assert calls[0][:6] == ['agent','--mode','ask','--model','cursor-grok-4.6-high','-p']
@@ -180,6 +181,20 @@ def test_default_config_is_disabled(staged):
     release, evidence, _ = staged
     result = invoke((release, evidence, release / 'tools/host_review/consumer.example.json'))
     assert result.returncode == 78
+
+
+@pytest.mark.parametrize('entry', ['cursor-independent-review','openrouter-review'])
+@pytest.mark.parametrize('transport', [None, 'openrouter'])
+def test_legacy_name_requires_explicit_cursor_semantics(staged, entry, transport):
+    _, _, config = staged
+    value = json.loads(config.read_text())
+    if transport is None:
+        del value['transport']
+    else:
+        value['transport'] = transport
+    config.write_text(json.dumps(value))
+    assert invoke(staged, entry).returncode == 78
+    assert not (config.parent / 'calls.jsonl').exists()
 
 
 def test_uncommitted_inputs_refuse_before_output_and_are_labelled(tmp_path, monkeypatch):

@@ -35,6 +35,7 @@ jobs:
             tests/test_model_routing.py \
             tests/test_external_review_execution.py \
             tests/test_review_release_package.py \
+            tests/test_submission_release_package.py \
             tests/test_cli_adapters.py \
             tests/test_http_adapters.py \
             tests/test_f2_model_identity.py \

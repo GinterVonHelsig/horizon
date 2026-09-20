@@ -44,10 +44,12 @@ def main(argv=None) -> int:
             pinned(root / relative, digest)
         config_path = args.consumer_config.absolute()
         config = json.loads(trusted_bytes(config_path))
-        if set(config) != {'schema', 'enabled', 'cursor_executable', 'cursor_sha256', 'routing_yaml', 'routing_sha256'}:
+        if set(config) != {'schema', 'enabled', 'transport', 'cursor_executable', 'cursor_sha256', 'routing_yaml', 'routing_sha256'}:
             raise ValueError('unknown or missing consumer configuration fields')
         if config['schema'] != 'horizon-review-consumer.v1' or config['enabled'] is not True:
             raise ValueError('consumer is not explicitly enabled')
+        if config['transport'] != 'cursor':
+            raise ValueError('explicit Cursor transport required; legacy names do not translate providers')
         executable = Path(config['cursor_executable'])
         if not executable.is_absolute() or not os.access(executable, os.X_OK):
             raise ValueError('absolute executable Cursor harness required')

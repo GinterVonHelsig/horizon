@@ -58,6 +58,10 @@ staged consumer directory. Keep it disabled until the operator approves all of:
 - Absolute path and SHA-256 of the existing Cursor harness executable. Hashing a
   wrapper does not attest its transitive binaries or account settings; preserve
   their independently captured version/provenance and subscription confirmation.
+- Explicit `transport: cursor`. The legacy openrouter-review name requires this
+  same declaration; missing or OpenRouter transport is rejected before dispatch.
+  Successful output records transport=cursor-agent, provider=cursor and the actual
+  stream-init model; provider semantics are never inferred from a legacy name.
 - Explicit routing YAML path (relative to the consumer file or absolute) and
   SHA-256. The shipped September policy is unchanged. If a required seat has no
   eligible authorized Cursor route, it fails; a compatibility command cannot

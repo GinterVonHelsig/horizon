@@ -35,12 +35,11 @@ flag is not proof of current controller readiness. No installed change is made.
 
 ## Proposed migration — NOT AUTHORIZED FOR DEPLOYMENT
 
-First establish a version-controlled home and provenance for installed transport
-sources; independently review the exact source before proposing package changes.
-Resolve the old pinned submit path against a separately approved release manifest,
-not an arbitrary working tree. Generate both entry points from that same approved
-source reference; test inspect/reject/submit argv with fake systemd-run/goal CLI,
-without submitting any parked or new production goal.
+Source ownership/provenance and a staged package for both paths now exist in
+tools/submission_transport; see submission-release-package.md. Both entry points
+share a pinned release/config and durable journal, with actual packaged consumer
+tests using fake systemd-run/goal CLI. Exact-source independent review and
+installation remain separate gates. No installed pin or production goal changed.
 
 Introduce `comms-relay` as a new CLI alias in that future package, forwarding to
 the same implementation. Keep the old CLI, systemd unit, socket path, API keys,

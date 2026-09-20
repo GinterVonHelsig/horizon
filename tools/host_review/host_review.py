@@ -848,6 +848,7 @@ def main(argv: list[str] | None = None) -> int:
         "tokens_used": result.tokens_used,
         "model": result.model,
         "provider": result.provider,
+        "transport": "cursor-agent",
         "review_attempt": args.review_attempt,
         "max_review_redos": MAX_REVIEW_REDOS,
         "suggestions": result.suggestions,
