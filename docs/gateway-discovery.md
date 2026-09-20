@@ -1,5 +1,13 @@
 # Gateway discovery — Comms-01, 2026-09-20
 
+Naming update, authorized after this discovery: the shared communications layer
+is **Comms Relay** (`comms-relay`). Gateway Delivery remains `gateway-delivery`.
+Historical architecture quotations, installed interface names and hashes below
+are retained as evidence, not current naming recommendations. See
+[Comms Relay migration](comms-relay-migration.md). The bounded disposable provider
+implementation is documented in [its contract](bounded-delivery-provider.md);
+the absence findings below describe the discovery baseline, not later source.
+
 ## Finding and scope
 
 The remembered architecture has documentary support, but **communications

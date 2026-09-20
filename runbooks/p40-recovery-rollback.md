@@ -22,7 +22,7 @@ path outside `/var/lib/top-delivery/runs`. Canonical runtime paths also select t
 trusted store without the flag. Missing or unreadable trusted data fails closed;
 there is no runtime fallback to a writable artifact copy.
 
-The root host gateway/recovery coordinator publishes original reviewed bytes to
+The root Comms Relay host submission/recovery coordinator (legacy host gateway) publishes original reviewed bytes to
 `/var/lib/top-delivery-submission-bundles/runs/<parent>/submissions/<submission>/`.
 This is deliberately a sibling of `/var/lib/top-delivery`: that existing directory
 is service-owned, so putting trusted data beneath it would allow ancestor

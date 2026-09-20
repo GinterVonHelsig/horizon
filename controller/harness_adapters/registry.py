@@ -20,14 +20,15 @@ from harness_adapters.identity import (
 )
 from harness_adapters.redaction import contains_credential, validate_env_name
 
-_KINDS = frozenset({"codex_cli", "cursor_cli", "claude_cli", "pi_cli", "http_openai"})
+_KINDS = frozenset({"codex_cli", "cursor_cli", "claude_cli", "pi_cli", "http_openai", "gateway_delivery"})
 _COMMON = frozenset({
     "id", "kind", "provider", "model", "credential_env", "timeout_seconds",
     "allowed_cwd_roots", "artifact_output_limit", "inline_output_limit",
 })
 _KIND_KEYS = {
     "codex_cli": frozenset({"executable", "codex_home", "allowlisted_env"}),
-    "cursor_cli": frozenset({"executable", "approval_mode", "worktree", "allowlisted_env"}),
+    "cursor_cli": frozenset({"executable", "approval_mode", "worktree", "allowlisted_env", "cursor_mode"}),
+    "gateway_delivery": frozenset({"executable", "approval_mode", "allowlisted_env", "delivery_spec", "subscription_only", "on_demand_disabled"}),
     "claude_cli": frozenset({"executable", "permission_mode", "allowlisted_env"}),
     "pi_cli": frozenset({"executable", "endpoint", "allowlisted_env"}),
     "http_openai": frozenset({
@@ -49,6 +50,10 @@ def validate_task_routes(config: dict[str, Any], executor: str, auditor: str) ->
     writer = next(item for item in config["adapters"] if item["id"] == executor)
     if writer["kind"] == "http_openai":
         raise ValueError("executor requires workspace execution capability; HTTP completion is review-only")
+    if writer["kind"] == "gateway_delivery":
+        reviewer = next(item for item in config["adapters"] if item["id"] == auditor)
+        if reviewer["kind"] != "cursor_cli" or reviewer["provider"] != "cursor" or reviewer.get("cursor_mode") != "ask" or auditor != "cursor-independent-review":
+            raise ValueError("bounded delivery requires explicit read-only cursor-independent-review")
 
 
 def load_registry_config(path: Path, *, validate_executables: bool = True) -> dict[str, Any]:
@@ -156,8 +161,15 @@ def validate_registry_config(config: dict[str, Any], *, validate_executables: bo
                 resolve_trusted_executable(str(executable))
             if kind == "codex_cli" and (not isinstance(raw.get("codex_home"), str) or not Path(raw["codex_home"]).is_absolute()):
                 raise ValueError("codex_home must be absolute")
-            if kind == "cursor_cli" and raw.get("approval_mode") not in {"never", "approve_mcps"}:
+            if kind in {"cursor_cli", "gateway_delivery"} and raw.get("approval_mode") not in {"never", "approve_mcps"}:
                 raise ValueError("invalid cursor approval_mode")
+            if kind == "cursor_cli" and raw.get("cursor_mode") not in {None, "agent", "ask"}:
+                raise ValueError("invalid cursor_mode")
+            if kind == "gateway_delivery":
+                from bounded_delivery import validate_spec
+                validate_spec(raw.get("delivery_spec"))
+                if raw["id"] != "gateway-delivery" or raw["provider"] != "cursor" or raw.get("subscription_only") is not True or raw.get("on_demand_disabled") is not True:
+                    raise ValueError("bounded delivery requires explicit Cursor included-subscription authorization")
             if kind == "claude_cli" and not isinstance(raw.get("permission_mode"), str):
                 raise ValueError("claude permission_mode is required")
     if routes["default_executor"] not in ids or routes["default_auditor"] not in ids:
@@ -191,7 +203,11 @@ class AdapterRegistry:
         adapters: dict[str, HarnessAdapter] = {}
         for raw in config["adapters"]:
             adapter_id = raw["id"]
-            if raw["kind"] == "http_openai":
+            if raw["kind"] == "gateway_delivery":
+                from bounded_delivery import BoundedDeliveryAdapter
+                inner = cli_adapter_from_config(adapter_id, {**raw, "kind": "cursor_cli", "cursor_mode": "agent"}, artifact_dir / adapter_id)
+                adapters[adapter_id] = BoundedDeliveryAdapter(inner, raw["delivery_spec"])
+            elif raw["kind"] == "http_openai":
                 adapters[adapter_id] = HttpOpenAIAdapter(
                     adapter_id=adapter_id, endpoint=raw["endpoint"], model=raw["model"],
                     credential_env=raw["credential_env"][0], artifact_dir=artifact_dir / adapter_id,

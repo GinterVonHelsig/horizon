@@ -329,6 +329,10 @@ class TaskWorker:
                     if not callable(complete_handoff):
                         return self._handle_failure(task, generation, "configuration_failure:handoff_controller_missing", context=context)
                     try:
+                        if context.get("delivery_profile"):
+                            product_path = executor.finalize_delivery(
+                                executor_request, executor_result, auditor_result, context.get("review_routing"),
+                            )
                         complete_handoff(
                             run_id=run_id,
                             handoff_id=str(context["handoff_id"]),
@@ -666,7 +670,7 @@ class TaskWorker:
                 validate_durable = getattr(self._controller, "validate_handoff_request", None)
                 if callable(validate_durable):
                     validate_durable(request)
-                return {
+                context = {
                     "task_id": task_id,
                     "title": request.get("objective", "capability-provider handoff"),
                     "executor_adapter": request.get("executor_adapter"),
@@ -675,6 +679,7 @@ class TaskWorker:
                     "handoff_id": handoff_id,
                     "handoff_parent_task_id": request.get("parent_task_id"),
                     "handoff_request_path": str(request_path.relative_to(self._artifact_root)),
+                    "handoff_request": request,
                     "acceptance_criteria": [{
                         "disposition": contract.success_disposition,
                         "product_contract": request.get("product_contract"),
@@ -690,6 +695,15 @@ class TaskWorker:
                         "Never emit credentials, private keys, full prompts, responses, or unrestricted commands."
                     ),
                 }
+                profile = request.get("handoff_context", {}).get("delivery_profile")
+                if profile:
+                    context["delivery_profile"] = profile
+                    context["acceptance_criteria"] = [
+                        "Exact disposable file content verified for specification "
+                        + request["handoff_context"]["delivery_spec_digest"],
+                        "Disposable workspace contains only the authorized deliverable",
+                    ]
+                return context
         spec = goal_spec_for_task(self._artifact_root, run_id, task_id)
         workstreams = spec.get("workstreams")
         if not isinstance(workstreams, list):
@@ -714,7 +728,18 @@ class TaskWorker:
         identities = [adapter_effective_identity(self._adapters[key]) for key in (executor_id, auditor_id)]
         if any(identity is None or identity_is_forbidden(identity) for identity in identities) or identities_conflict(*identities):
             raise WorkerConfigurationError("executor and auditor require distinct complete effective identities")
-        if self._routing_policy is not None:
+        if context.get("delivery_profile"):
+            from bounded_delivery import BoundedDeliveryAdapter
+            from model_routing import authorize_delivery_review, load_model_routing
+            from harness_adapters.registry import validate_task_routes
+            if not isinstance(self._adapters[executor_id], BoundedDeliveryAdapter):
+                raise WorkerConfigurationError("delivery profile requires real bounded provider implementation")
+            if self._adapter_config is None:
+                raise WorkerConfigurationError("delivery profile requires explicit adapter configuration")
+            validate_task_routes(self._adapter_config, executor_id, auditor_id)
+            policy = self._routing_policy or load_model_routing(Path(__file__).resolve().parents[1] / "architecture/model-routing.yaml")
+            context["review_routing"] = authorize_delivery_review(policy, identities[0], identities[1]).to_dict()
+        elif self._routing_policy is not None:
             from model_routing import authorize_task_review
             record = authorize_task_review(self._routing_policy, identities[0], identities[1])
             context["review_routing"] = record.to_dict()
@@ -725,7 +750,7 @@ class TaskWorker:
         return executor_id, auditor_id
 
     def _validate_execution_identity(self, adapter_id: str, result: HarnessResult) -> None:
-        if self._routing_policy is None:
+        if self._routing_policy is None and not any(getattr(a, "kind", None) == "gateway_delivery" for a in self._adapters.values()):
             return  # Dependency-injected legacy/test workers have no phase policy.
         from harness_adapters.identity import adapter_effective_identity, config_effective_identity
         expected = adapter_effective_identity(self._adapters[adapter_id])
@@ -819,6 +844,7 @@ class TaskWorker:
                 else EXECUTOR_RESULT_SCHEMA
             ),
             metadata={"role": "executor", "adapter_id": adapter_id,
+                      **({"handoff_request": context["handoff_request"]} if context.get("handoff_request") else {}),
                       "acceptance_criteria": normalize_acceptance_criteria(context.get("acceptance_criteria", []))},
         )
 
@@ -827,6 +853,8 @@ class TaskWorker:
         context: dict[str, Any], executor_result: HarnessResult,
         executor_evidence: list[dict[str, str]],
     ) -> HarnessRequest:
+        if context.get("delivery_profile"):
+            context = {**context, "timeout_seconds": self._adapters[context["executor_adapter"]].remaining_seconds()}
         acceptance = normalize_acceptance_criteria(context.get("acceptance_criteria", []))
         trusted = collect_trusted_evidence(artifact_root=self._artifact_root,
             role_dir=role_dir.parent / "executor", executor_result=executor_result,
@@ -852,7 +880,9 @@ class TaskWorker:
             json.dumps(acceptance, sort_keys=True) + "\n\nEXECUTOR EVIDENCE\n" +
             json.dumps(immutable, sort_keys=True) +
             "\n\nTRUSTED EVIDENCE\n" + json.dumps(trusted, sort_keys=True) +
-            "\n\nReturn exactly one JSON object matching the verdict schema."
+            "\n\nRead-only review: do not create/edit files or invoke controllers. "
+            "Return exactly one JSON object, no Markdown fences, matching this verdict schema:\n"
+            + json.dumps(AUDITOR_SCHEMA, sort_keys=True)
         )
         return self._base_request(
             task, attempt_id, adapter_id, role_dir, context, prompt=prompt,

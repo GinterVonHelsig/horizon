@@ -28,10 +28,15 @@ def build_codex_argv(*, executable: str, prompt: str, codex_home: str, model: st
 
 def build_cursor_argv(
     *, executable: str, prompt: str, model: str, approval_mode: str,
-    worktree: str | None,
+    worktree: str | None, cursor_mode: str | None = None,
 ) -> list[str]:
     argv = [executable, "-p", prompt, "--output-format", "stream-json", "--model", model]
-    argv.append("--force" if approval_mode == "never" else "--approve-mcps")
+    if cursor_mode == "ask":
+        argv.extend(["--mode", "ask", "--sandbox", "enabled", "--trust"])
+    else:
+        argv.append("--force" if approval_mode == "never" else "--approve-mcps")
+        if cursor_mode == "agent":
+            argv.extend(["--sandbox", "enabled", "--trust"])
     if worktree:
         argv.extend(["--worktree", worktree])
     return argv
@@ -126,6 +131,7 @@ class CliHarnessAdapter:
     approval_mode: str | None = None
     worktree: str | None = None
     endpoint: str | None = None
+    cursor_mode: str | None = None
     _cancel_requested: bool = False
 
     def start(self, request: HarnessRequest) -> HarnessResult:
@@ -215,7 +221,8 @@ class CliHarnessAdapter:
                                     codex_home=self.codex_home or "", model=self.model)
         if self.kind == "cursor_cli":
             return build_cursor_argv(executable=self.executable, prompt=prompt, model=self.model,
-                                     approval_mode=self.approval_mode or "never", worktree=self.worktree)
+                                     approval_mode=self.approval_mode or "never", worktree=self.worktree,
+                                     cursor_mode=self.cursor_mode)
         if self.kind == "claude_cli":
             return build_claude_argv(executable=self.executable, prompt=prompt, model=self.model,
                                      permission_mode=self.permission_mode or "default")
@@ -241,4 +248,5 @@ def cli_adapter_from_config(adapter_id: str, config: dict[str, Any], artifact_di
         codex_home=config.get("codex_home"), permission_mode=config.get("permission_mode"),
         approval_mode=config.get("approval_mode"), worktree=config.get("worktree"),
         endpoint=config.get("endpoint"),
+        cursor_mode=config.get("cursor_mode"),
     )

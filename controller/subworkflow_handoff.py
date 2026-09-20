@@ -49,6 +49,7 @@ class ProviderContract:
 
 
 HORIZON_PREREQ_FAILURE = "BLOCKED_HORIZON_PREREQ_MISSING"
+DISPOSABLE_DELIVERY_PROFILE = "gateway-delivery-disposable-file.v1"
 
 HORIZON_PREREQ_CONTRACT = ProviderContract(
     failure_code=HORIZON_PREREQ_FAILURE,
@@ -202,6 +203,18 @@ def build_handoff_request(
         "request_digest": request_digest,
         "status": "created",
     }
+    profile = (handoff_context or {}).get("delivery_profile")
+    if profile is not None:
+        if contract != HORIZON_PREREQ_CONTRACT or profile != DISPOSABLE_DELIVERY_PROFILE:
+            raise HandoffValidationError("unsupported_delivery_profile")
+        _validate_hex(handoff_context.get("delivery_spec_digest"), "delivery_spec_digest")
+        _validate_id(handoff_context.get("prerequisite_node_id"), "prerequisite_node_id")
+        # Explicit opt-in, digest-bound transport. Legacy requests stay legacy.
+        request["auditor_adapter"] = "cursor-independent-review"
+        # One pre-intent worker reclaim; durable intent still permits only one
+        # implementation call. This is not authorization to replay effects.
+        request["max_attempts"] = 2
+        request["timeout_seconds"] = 600
     _scan_secret(request)
     return request
 

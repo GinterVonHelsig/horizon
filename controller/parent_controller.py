@@ -181,7 +181,7 @@ class ParentController:
             raise ValueError("durable submission requires explicit executor and auditor routes")
         self._validate_routes(routing.executor_adapter, routing.auditor_adapter)
 
-    def _validate_routes(self, executor: str, auditor: str) -> None:
+    def _validate_routes(self, executor: str, auditor: str) -> dict:
         from harness_adapters.registry import load_registry_config, validate_task_routes
         config = self.adapter_config
         if config is None:
@@ -190,6 +190,7 @@ class ParentController:
                 raise ValueError("missing adapter configuration for executable task")
             config = load_registry_config(Path(config_path), validate_executables=False)
         validate_task_routes(config, executor, auditor)
+        return config
 
     def validate_handoff_request(self, request: dict) -> None:
         with self._repo.transaction() as cur:
@@ -296,7 +297,10 @@ class ParentController:
             handoff_context=handoff_context,
         )
         # A coordinator skill name is not an executable adapter registration.
-        self._validate_routes(request["executor_adapter"], request["auditor_adapter"])
+        route_config = self._validate_routes(request["executor_adapter"], request["auditor_adapter"])
+        if request.get("handoff_context", {}).get("delivery_profile"):
+            from bounded_delivery import validate_binding
+            validate_binding(route_config, request)
         with self._repo.transaction() as cur:
             cur.execute("SELECT 1 FROM subworkflow_handoffs WHERE provider_task_id = %s", (parent_task_id,))
             if cur.fetchone():

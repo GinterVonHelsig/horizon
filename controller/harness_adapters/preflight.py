@@ -129,7 +129,7 @@ def preflight_adapters(
                 f"adapter {adapter_id} model is required",
                 code="BLOCKED_ADAPTER_MODEL",
             )
-        catalog = lister(kind, executable)
+        catalog = lister("cursor_cli" if kind == "gateway_delivery" else kind, executable)
         if catalog and model not in catalog:
             raise AdapterPreflightError(
                 f"adapter {adapter_id} model {model} is unavailable",

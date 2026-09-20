@@ -1,5 +1,16 @@
 version: 3
 month: 2026-09
+delivery_profiles:
+  gateway-delivery-disposable-file.v1:
+    scope: one-preauthorized-disposable-file
+    automatic_retries: 0
+    production_release: forbidden
+    review:
+      role: bounded-delivery-independent-review
+      provider: cursor
+      model: cursor-grok-4.6-high
+      effort: high
+      fallbacks: []
 coordinator:
   name: gateway-delivery
   provider: openai

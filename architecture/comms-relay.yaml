@@ -1,0 +1,24 @@
+schema_version: comms-relay-naming.v1
+component:
+  name: Comms Relay
+  technical_id: comms-relay
+  former_architecture_name: communications Gateway
+  role: shared-authenticated-communications-layer
+  hosts: [Comms-01, Comms-02]
+  consumers: [Horizon, Gateway Delivery, Local Delivery]
+  integration_status: incomplete
+delivery_workflows:
+  - name: Gateway Delivery
+    technical_id: gateway-delivery
+  - name: Local Delivery
+    technical_id: local-delivery
+compatibility:
+  deployment_mutations_authorized: false
+  retained_submission_command: top-delivery-host-gateway
+  retained_submission_service: top-delivery-host-gateway.service
+  retained_submission_socket: /run/top-delivery-host-gateway/gateway.sock
+  retained_secondary_submission_command: top-delivery-submit
+  retained_readiness_file: /opt/operator-harness/etc/top-delivery-gateway-readiness.json
+network_gateway:
+  address: 192.168.0.1
+  rename: false
