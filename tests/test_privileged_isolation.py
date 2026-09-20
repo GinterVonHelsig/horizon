@@ -113,3 +113,46 @@ def test_corrupt_packaged_bytes_refused_before_copy(monkeypatch):
     monkeypatch.setattr(historical_package.tempfile,'mkdtemp',lambda **kw:pytest.fail('copy before hash validation'))
     with pytest.raises(ValueError,match='hash mismatch'):
         historical_package.materialize('postgresql://root@127.0.0.1:5432/postgres')
+
+
+def test_forged_inside_entry_refused_before_mount(tmp_path):
+    # A tripwire replaces mount even on an unfixed wrapper: this regression must
+    # never perform the dangerous host overmount it is designed to detect.
+    marker=tmp_path/'mount-called'
+    mount=tmp_path/'mount'
+    mount.write_text('#!/bin/sh\nprintf invoked > "$ISOLATION_TEST_MARKER"\nexit 99\n')
+    mount.chmod(0o700)
+    env=dict(os.environ,PATH=str(tmp_path)+':'+os.environ['PATH'],
+             ISOLATION_TEST_MARKER=str(marker),HORIZON_TEST_OUTER_MNT='forged',
+             HORIZON_TEST_OUTER_NET='forged',HORIZON_TEST_OUTER_PID='forged')
+    result=subprocess.run(['bash',str(ROOT/'scripts/test-recovery-isolated.sh'),'--inside'],
+                          cwd=ROOT,env=env,capture_output=True,text=True,timeout=10)
+    assert result.returncode==64,result.stderr
+    assert not marker.exists()
+
+
+def test_public_wrapper_always_unshares_before_setup(tmp_path):
+    marker=tmp_path/'unshare-args'
+    unshare=tmp_path/'unshare'
+    unshare.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$ISOLATION_TEST_MARKER"\nexit 77\n')
+    unshare.chmod(0o700)
+    env=dict(os.environ,PATH=str(tmp_path)+':'+os.environ['PATH'],
+             ISOLATION_TEST_MARKER=str(marker),HORIZON_TEST_OUTER_MNT='forged',
+             HORIZON_TEST_OUTER_NET='forged',HORIZON_TEST_OUTER_PID='forged')
+    result=subprocess.run(['bash',str(ROOT/'scripts/test-recovery-isolated.sh'),'-q','tests/fake.py'],
+                          cwd=ROOT,env=env,capture_output=True,text=True,timeout=10)
+    assert result.returncode==77,result.stderr
+    assert marker.read_text().splitlines()==['--mount','--net','--pid','--cgroup','--fork','--mount-proc','bash','-s','--','-q','tests/fake.py']
+
+
+def test_historical_git_blob_provenance_matches_current_sources():
+    import hashlib,json
+    from test_only.historical_package import PACKAGE
+    provenance=json.loads((PACKAGE/'base-source-provenance.json').read_text())
+    assert provenance['historical_sha']=='f2658c33c9f881be59f25608038f4f585641e0a5'
+    assert 'comparison_at_repair_sha' in provenance
+    assert len(provenance['sources'])==13
+    for item in provenance['sources']:
+        content=(ROOT/'controller/migrations/versions'/f"{item['revision']}.py").read_bytes()
+        git_blob=hashlib.sha1(b'blob '+str(len(content)).encode()+b'\0'+content).hexdigest()
+        assert git_blob==item['historical_git_blob']==item['current_git_blob']

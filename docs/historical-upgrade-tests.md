@@ -15,6 +15,9 @@ access is required to reproduce the package. Hash drift fails before copying.
 
 `base-source-provenance.json` records all 001–013 Git blob identities matching
 GinterVonHelsig/TOP-DELIVERY f2658c33c9f881be59f25608038f4f585641e0a5.
+Its comparison_at_repair_sha names the discovery snapshot, not a claim about the
+current tip. A regression computes the Git blob identities from current bytes and
+compares all thirteen against that historical record, without needing network refs.
 Original 014 was found in BOTH Comms-01 worktrees:
 
 - /opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/014_requeue_blocked_parent_task.py
@@ -69,7 +72,11 @@ rtk proxy bash scripts/test-recovery-isolated.sh -q -ra --tb=short \
   tests/test_privileged_isolation.py tests/test_migration_target_paths.py
 ```
 
-The wrapper compares outer/current namespace IDs before setup, then creates private
+Every wrapper entry invokes kernel unshare; the setup body is passed on stdin to
+the new process and has no public --inside entry point. Forged namespace environment
+variables cannot skip unshare or authorize a host overmount. Tests use harmless
+mount/unshare tripwires to prove refusal before setup. The wrapper additionally
+compares outer/current namespace IDs before setup, then creates private
 tmpfs mounts, private loopback PostgreSQL and generated test trust material. The
 privileged session independently verifies mounts, namespace separation, loopback
 transport, private PostgreSQL data directory and matching postmaster PID/network
@@ -83,8 +90,9 @@ The materializer checks isolation and every source hash before writing a private
 runner beneath `/etc/top-delivery/historical-test-*` (hidden tmpfs, not installed
 files). Original 014 executes using its historical Alembic environment/catalog/
 source verifier. Private trust metadata selects its original pin and measured
-historical hostname fingerprint, then is restored in finally. Current production
-pins remain unchanged. 015/016 execute their guarded original modules. Current
+historical hostname fingerprint, then is restored in finally. Both private files
+are restored even if measuring that fingerprint fails, covered by injection.
+Installed production pins remain unchanged. 015/016 execute their guarded original modules. Current
 Alembic then upgrades directly 016→017→018→019→020→021, or separately 016→017 and
 017→021. No guard disabling, source substitution into installed versions, manual
 stamp over unapplied SQL, or production database copy is used.

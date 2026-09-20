@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Fresh network/mount/PID namespaces: never connect to host PostgreSQL or trust files.
 set -euo pipefail
-if [[ ${1:-} != --inside ]]; then
-  export HORIZON_TEST_OUTER_MNT="$(readlink /proc/self/ns/mnt)"
-  export HORIZON_TEST_OUTER_NET="$(readlink /proc/self/ns/net)"
-  export HORIZON_TEST_OUTER_PID="$(readlink /proc/self/ns/pid)"
-  exec unshare --mount --net --pid --cgroup --fork --mount-proc bash "$0" --inside "$@"
+if [[ ${1:-} == --inside ]]; then
+  echo 'private setup has no public --inside entry point' >&2
+  exit 64
 fi
-shift
-# --inside is not a public shortcut: refuse it in the original namespaces
-# before mount or PostgreSQL setup can change anything.
+export HORIZON_TEST_OUTER_MNT="$(readlink /proc/self/ns/mnt)"
+export HORIZON_TEST_OUTER_NET="$(readlink /proc/self/ns/net)"
+export HORIZON_TEST_OUTER_PID="$(readlink /proc/self/ns/pid)"
+# Every entry goes through the kernel's unshare, even with forged/inherited env.
+# The setup body is stdin of the new process, not a re-enterable script branch.
+exec unshare --mount --net --pid --cgroup --fork --mount-proc bash -s -- "$@" <<'ISOLATED_TEST_BODY'
+set -euo pipefail
+# Comparison evidence remains useful, but is not permission to skip unshare.
 test -n "${HORIZON_TEST_OUTER_MNT:-}"
 test -n "${HORIZON_TEST_OUTER_NET:-}"
 test -n "${HORIZON_TEST_OUTER_PID:-}"
@@ -41,3 +44,4 @@ unset TOP_DELIVERY_DATABASE_URL TOP_DELIVERY_ADAPTER_CONFIG TOP_DELIVERY_RUN_ID 
 export PYTHONPATH="$PWD/controller"
 export PYTHONDONTWRITEBYTECODE=1
 python3 -m pytest "$@"
+ISOLATED_TEST_BODY

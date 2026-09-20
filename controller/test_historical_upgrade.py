@@ -67,18 +67,18 @@ def bootstrap(url, output, support, standalone=False):
     saved=anchor.read_bytes()
     data=json.loads(saved)
     data['legacy_source_digests']['014_requeue_blocked_parent_task']='be05d24299ae93dc3d0c5244d9a10266c2b098327a644adbf575dde954ee672c'
-    anchor.write_text(json.dumps(data))
     attestation=Path(COMMS01_ATTESTATION_PATH)
     saved_attestation=attestation.read_bytes()
     historical_attestation=json.loads(saved_attestation)
-    # Historical runner predates the current test-seam issuer. Use its measured
-    # runtime fingerprint, not a fabricated host or disabled identity check.
-    env=dict(os.environ,PYTHONPATH=str(OLD),PYTHONDONTWRITEBYTECODE='1')
-    measured=subprocess.check_output([sys.executable,'-c',
-        'from attestation import _runtime_host_fingerprint; print(_runtime_host_fingerprint())'],cwd=OLD,env=env,text=True).strip()
-    historical_attestation['host_fingerprint']=measured
-    attestation.write_text(json.dumps(historical_attestation))
     try:
+        anchor.write_text(json.dumps(data))
+        # Historical runner predates the current test-seam issuer. Use its measured
+        # runtime fingerprint, not a fabricated host or disabled identity check.
+        env=dict(os.environ,PYTHONPATH=str(OLD),PYTHONDONTWRITEBYTECODE='1')
+        measured=subprocess.check_output([sys.executable,'-c',
+            'from attestation import _runtime_host_fingerprint; print(_runtime_host_fingerprint())'],cwd=OLD,env=env,text=True).strip()
+        historical_attestation['host_fingerprint']=measured
+        attestation.write_text(json.dumps(historical_attestation))
         env=dict(os.environ,PYTHONPATH=str(OLD),PYTHONDONTWRITEBYTECODE='1')
         result=subprocess.run([sys.executable,'-c',
             'import sys; from db import alembic_command; alembic_command(sys.argv[1],"upgrade","014_requeue_blocked_parent_task")',url],
@@ -87,8 +87,10 @@ def bootstrap(url, output, support, standalone=False):
             from harness_adapters.redaction import redact_text
             raise RuntimeError('original014: '+redact_text(result.stderr)[-6000:])
     finally:
-        anchor.write_bytes(saved)
-        attestation.write_bytes(saved_attestation)
+        try:
+            anchor.write_bytes(saved)
+        finally:
+            attestation.write_bytes(saved_attestation)
     assert stage('original014',url)=='014_requeue_blocked_parent_task'
     from sqlalchemy import create_engine
     from alembic.operations import Operations
@@ -216,6 +218,31 @@ def test_unmodified_fresh_live_replay_remains_restricted(controller_test_support
         diagnostic=str(caught.value.stderr or caught.value.output)
         assert '014_requeue_blocked_parent_task is already applied on live; do not re-apply' in diagnostic
         assert current_database_revision(url)!='021_goal_completion'
+    finally:
+        support.install_capability(operation='drop_database',database_name=name)
+        drop_database(support.ADMIN_URL,name)
+
+
+def test_fingerprint_failure_restores_both_private_trust_files(controller_test_support,tmp_path,monkeypatch):
+    support=controller_test_support
+    require_isolation(support.ADMIN_URL)
+    paths=[Path(MIGRATION_SOURCE_PROVENANCE_PATH),Path(COMMS01_ATTESTATION_PATH)]
+    saved=[p.read_bytes() for p in paths]
+    name='td_test_fingerprint_'+uuid.uuid4().hex
+    support.install_capability(operation='create_database',database_name=name)
+    url=create_disposable_database(support.ADMIN_URL,name)
+    original=subprocess.check_output
+    def fail_fingerprint(argv,*args,**kwargs):
+        if any('_runtime_host_fingerprint' in str(arg) for arg in argv):
+            raise RuntimeError('injected fingerprint failure')
+        return original(argv,*args,**kwargs)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(subprocess,'check_output',fail_fingerprint)
+            with pytest.raises(RuntimeError,match='injected fingerprint failure'):
+                bootstrap(url,tmp_path,support)
+        assert [p.read_bytes() for p in paths]==saved
+        assert current_database_revision(url)=='013_cleanup_expired_attempt'
     finally:
         support.install_capability(operation='drop_database',database_name=name)
         drop_database(support.ADMIN_URL,name)
