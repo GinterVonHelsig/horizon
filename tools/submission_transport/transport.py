@@ -205,6 +205,27 @@ def submit(config, request, data, parsed):
             fcntl.flock(dispatch, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return {'status':'blocked','operation':'submit','reason':'dispatch_busy_before_effect_safe_to_retry'}
+        fence = Path(config['journal_root']) / 'dispatch.json'
+        if fence.exists():
+            owner = json.loads(trusted(fence).read_bytes())
+            if set(owner) != {'request_id', 'identity_sha256'} or not SHA.fullmatch(owner['request_id']):
+                raise ValueError('invalid durable dispatch fence')
+            owner_dir = directory.parent / owner['request_id']
+            owner_identity = json.loads(trusted(owner_dir / 'request.json').read_bytes())
+            if digest(encoded(owner_identity)) != owner['identity_sha256']:
+                raise ValueError('dispatch fence identity mismatch')
+            if not (owner_dir / 'receipt.json').exists():
+                return {'status':'blocked','operation':'submit','reason':'global_dispatch_outcome_unknown_no_replay'}
+            receipt(trusted(owner_dir / 'receipt.json').read_bytes(), owner_identity)
+            # Only a validated receipt written after the synchronous child exit
+            # reconciles the global fence. Never erase a per-request intent.
+        # GoalSubmitter requires this directory before it can register anything.
+        # Create each bound component privately; failure is still before intent.
+        current = root
+        for part in artifact.relative_to(root).parts:
+            current = current / part
+            current.mkdir(mode=0o700, exist_ok=True)
+            trusted(current, directory=True)
         command = [config['systemd_run'], '--wait', '--collect', '--pipe',
             '--unit=top-delivery-entrypoint@top-delivery-controller', '--service-type=oneshot',
             f'--working-directory={ROOT / "controller"}', f'--property=EnvironmentFile={config["environment_file"]}',
@@ -213,6 +234,7 @@ def submit(config, request, data, parsed):
         if parent:
             command += ['--existing-parent', parent, '--runtime-artifact-root', str(root / parent / 'artifacts')]
         atomic(state_file, {'state': 'dispatch_intent', 'request_id': key})
+        atomic(fence, {'request_id': key, 'identity_sha256': digest(encoded(identity))})
         # One call only. systemd may outlive timeout/process death: retain intent.
         try:
             child = subprocess.run(command, cwd=ROOT / 'controller', capture_output=True, text=True,

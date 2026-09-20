@@ -49,6 +49,10 @@ root=pathlib.Path(__file__).parent
 args=sys.argv[1:]
 with (root/'calls.jsonl').open('a') as stream: stream.write(json.dumps(args)+'\\n')
 identity=json.loads((pathlib.Path(args[args.index('--prompt')+1]).parent/'request.json').read_text())
+assert pathlib.Path(identity['artifact_root']).is_dir(), 'GoalSubmitter requires existing artifact root'
+sys.path.insert(0,str(pathlib.Path(args[args.index('submit')-1]).parent))
+from goal_submitter import GoalSubmitter
+GoalSubmitter(object(), pathlib.Path(identity['artifact_root']), mode='dry_run')
 mode=json.loads((root/'mode.json').read_text())
 (root/'child-pid').write_text(str(os.getpid()))
 if mode=='wait':
@@ -68,7 +72,9 @@ if mode=='nonzero': raise SystemExit(5)
     fake.chmod(0o755)
     (tmp_path / 'mode.json').write_text('"ok"')
     manifest = json.loads((release / 'manifest.json').read_text())
-    python = Path(sys.executable).resolve()
+    python = tmp_path / 'pinned-child-python'
+    python.write_text('#!/bin/sh\nexit 99\n')  # fake systemd never executes this pin
+    python.chmod(0o755)
     cfg = {'schema':'horizon-submission-consumer.v1','enabled':True,'release_root':str(release),
         'release_commit':manifest['source_commit'],'release_manifest_sha256':runtime.digest((release/'manifest.json').read_bytes()),
         'prompt_root':str(tmp_path/'prompts'),'runs_root':str(tmp_path/'runs'),'journal_root':str(tmp_path/'journal'),
@@ -192,6 +198,12 @@ def test_unknown_effect_after_process_death_blocks_other_path(consumer, server):
     while not (cfg.parent/'effect').exists() and time.monotonic()<deadline: time.sleep(.02)
     assert (cfg.parent/'effect').exists()
     process.kill()
+    process.wait(timeout=10)
+    second=prompt.with_name('other.md')
+    second.write_text(prompt.read_text().replace('Disposable submission','Other submission'))
+    blocked=invoke(consumer,'top-delivery-host-gateway','submit','--prompt',second)
+    assert blocked.returncode==78 and 'global_dispatch_outcome_unknown' in blocked.stdout
+    assert len(calls(consumer))==1
     (cfg.parent/'release-child').write_text('finish fake child only')
     process.communicate(timeout=10)
     result=invoke(consumer,'top-delivery-host-gateway','submit','--prompt',prompt)
@@ -297,3 +309,49 @@ def test_socket_dry_run_flag_cannot_become_durable_submit(consumer, server):
             'prompt_sha256':runtime.digest(prompt.read_bytes()),'dry_run':True}))
         assert runtime.receive(client)['status']=='blocked'
     assert calls(consumer)==[]
+
+
+def test_unknown_first_request_does_not_poison_second_request(consumer):
+    _,cfg,prompt=consumer
+    (cfg.parent/'mode.json').write_text('"nonzero"')
+    assert invoke(consumer,'top-delivery-submit',prompt).returncode==78
+    second=prompt.with_name('second.md')
+    second.write_text(prompt.read_text().replace('Disposable submission','Second submission'))
+    result=invoke(consumer,'top-delivery-submit',second)
+    assert result.returncode==78 and 'global_dispatch_outcome_unknown' in result.stdout
+    assert len(calls(consumer))==1
+    assert len(list((cfg.parent/'journal').glob('*/state.json')))==1
+    assert invoke(consumer,'top-delivery-submit',second).returncode==78
+    assert len(calls(consumer))==1
+
+
+def test_writable_child_python_is_rejected_before_effect(consumer):
+    _,cfg,prompt=consumer
+    Path(json.loads(cfg.read_text())['python']).chmod(0o775)
+    assert invoke(consumer,'top-delivery-submit',prompt).returncode==78
+    assert not calls(consumer)
+
+
+def test_artifact_creation_failure_is_before_intent_and_recoverable(consumer, monkeypatch):
+    release,cfg,prompt=consumer
+    monkeypatch.setattr(runtime,'ROOT',release)
+    config=runtime.load_config(cfg)
+    request={'operation':'submit','prompt_path':str(prompt),'prompt_sha256':runtime.digest(prompt.read_bytes())}
+    original=Path.mkdir
+    def fail(path,*args,**kwargs):
+        if path.name=='artifacts': raise PermissionError('simulated filesystem restriction')
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'mkdir',fail)
+    with pytest.raises(PermissionError): runtime.handle(config,request,os.geteuid())
+    assert not list((cfg.parent/'journal').glob('*/state.json')) and not calls(consumer)
+    monkeypatch.setattr(Path,'mkdir',original)
+    assert invoke(consumer,'top-delivery-submit',prompt).returncode==0
+
+
+def test_valid_receipt_reconciles_global_fence_for_distinct_request(consumer):
+    _,cfg,prompt=consumer
+    assert invoke(consumer,'top-delivery-submit',prompt).returncode==0
+    second=prompt.with_name('second.md')
+    second.write_text(prompt.read_text().replace('Disposable submission','Second submission'))
+    assert invoke(consumer,'top-delivery-submit',second).returncode==0
+    assert len(calls(consumer))==2

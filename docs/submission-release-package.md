@@ -75,10 +75,18 @@ not create another dispatch. The child reads a durable immutable prompt snapshot
 |---|---|
 | Before intent: interrupted snapshot or busy attested unit | Complete the same preparation and dispatch once, unchanged binding |
 | Same request, concurrent direct/socket clients | Per-request lock, same retained receipt, one dispatch |
-| Different request while fixed unit is busy | Nonblocking global lock returns pre-effect blocked; no automatic retry |
+| Different request while fixed unit is busy or its owner outcome is unknown | Process lock plus durable global fence blocks before the new request's intent; no automatic retry |
 | Child may have run; timeout/death/nonzero/malformed/mismatched receipt | Retain intent; outcome_unknown stops without blind replay |
 | Valid receipt durable; final marker or response lost | Validate and return receipt, no dispatch |
 | Paused/stopped/awaiting-controller outcome | Preserve blocked state, no takeover/reactivation |
+
+Artifact directories are created privately and checked before dispatch intent. The
+rendered service must allow writes to the exact configured runs root as well as the
+socket and journal roots; the template is not an installed permission change.
+The durable global fence is reconciled only against its identity-bound receipt,
+recorded after synchronous child exit. It survives wrapper death/restart and is
+not cleared merely because a unit is absent. Per-request intents are never erased.
+See [independent review disposition](submission-review-disposition.md).
 
 Unknown outcomes require separately authorized reconciliation of database/artifact
 evidence; no intent-deletion/replay command exists. If no trustworthy receipt can be
