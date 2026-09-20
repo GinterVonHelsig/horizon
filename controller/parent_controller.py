@@ -192,7 +192,7 @@ class ParentController:
         validate_task_routes(config, executor, auditor)
         return config
 
-    def validate_handoff_request(self, request: dict) -> None:
+    def validate_handoff_request(self, request: dict) -> float:
         with self._repo.transaction() as cur:
             cur.execute("SELECT request_json, state, EXTRACT(EPOCH FROM clock_timestamp() - created_at) AS age FROM subworkflow_handoffs WHERE handoff_id = %s AND run_id = %s AND provider_task_id = %s",
                         (request["handoff_id"], request["run_id"], request["provider_task_id"]))
@@ -207,6 +207,7 @@ class ParentController:
         task = self.task(request["provider_task_id"])
         if task.attempt > request["max_attempts"]:
             raise ValueError("provider attempt budget exhausted")
+        return float(request["timeout_seconds"]) - float(row["age"])
 
     def start_or_preserve_run(self, run_id: str, state: str = "active") -> str:
         try:
@@ -348,13 +349,15 @@ class ParentController:
         request_path = handoff_root / "request.json"
         request = json.loads(request_path.read_text())
         with self._repo.transaction() as cur:
-            cur.execute("SELECT request_json FROM subworkflow_handoffs WHERE handoff_id = %s AND run_id = %s", (handoff_id, run_id))
+            cur.execute("SELECT request_json, state FROM subworkflow_handoffs WHERE handoff_id = %s AND run_id = %s", (handoff_id, run_id))
             row = cur.fetchone()
         authoritative = row["request_json"] if row else None
         if isinstance(authoritative, str):
             authoritative = json.loads(authoritative)
         if authoritative != request:
             raise ValueError("handoff request differs from durable authority")
+        if row["state"] != "completed":
+            self.validate_handoff_request(request)
         product = validate_product(product_path, request, self.artifact_root)
         product_json = product.pop("validated_product")
         epoch = self._ensure_epoch(run_id)

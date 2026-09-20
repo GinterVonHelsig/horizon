@@ -168,7 +168,7 @@ def validate_registry_config(config: dict[str, Any], *, validate_executables: bo
             if kind == "gateway_delivery":
                 from bounded_delivery import validate_spec
                 validate_spec(raw.get("delivery_spec"))
-                if raw["id"] != "gateway-delivery" or raw["provider"] != "cursor" or raw.get("subscription_only") is not True or raw.get("on_demand_disabled") is not True:
+                if raw["id"] != "gateway-delivery-disposable-file" or raw["provider"] != "cursor" or raw.get("subscription_only") is not True or raw.get("on_demand_disabled") is not True:
                     raise ValueError("bounded delivery requires explicit Cursor included-subscription authorization")
             if kind == "claude_cli" and not isinstance(raw.get("permission_mode"), str):
                 raise ValueError("claude permission_mode is required")

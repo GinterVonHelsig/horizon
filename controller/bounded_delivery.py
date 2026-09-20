@@ -17,7 +17,7 @@ from harness_adapters.contract import HarnessRequest, HarnessResult
 from harness_adapters.identity import adapter_effective_identity, config_effective_identity, identities_conflict
 from harness_adapters.redaction import contains_credential
 from subworkflow_handoff import (
-    DISPOSABLE_DELIVERY_PROFILE, HORIZON_PREREQ_CONTRACT, canonical_json,
+    DISPOSABLE_DELIVERY_PROFILE, DISPOSABLE_FILE_CONTRACT, canonical_json,
     digest_value, validate_request, validate_product,
 )
 
@@ -71,6 +71,28 @@ def write_once(path: Path, data: bytes):
         os.close(fd)
 
 
+def bound_delivery_verdict(payload, acceptance, evidence):
+    """Independent observations must cite deliverable bytes, not questions."""
+    from auditor_bind import AUDITOR_SCHEMA
+    from harness_adapters.schema import validate_json_schema
+    try:
+        validate_json_schema(payload, AUDITOR_SCHEMA)
+        if payload["verdict"] == "reject":
+            return "reject"
+        criteria = payload["criteria"]
+        if len(criteria) != len(acceptance) or sorted(c["criterion"] for c in criteria) != sorted(acceptance):
+            return None
+        for criterion in criteria:
+            if criterion["met"] is not True or not all(
+                ref["name"] == "deliverable" and ref["sha256"] == evidence["sha256"]
+                for ref in criterion["evidence_refs"]
+            ):
+                return None
+        return "approve"
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 class BoundedDeliveryAdapter:
     """Implementation adapter plus worker-called post-review publication gate.
 
@@ -85,6 +107,7 @@ class BoundedDeliveryAdapter:
         self.adapter_id = executor.adapter_id
         self.provider, self.model = executor.provider, executor.model
         self._started = None
+        self._budget = 0.0
         self._cancelled = False
 
     def cancel(self):
@@ -96,7 +119,7 @@ class BoundedDeliveryAdapter:
 
     def _request(self, request):
         handoff = request.metadata.get("handoff_request")
-        if not isinstance(handoff, dict) or validate_request(handoff) != HORIZON_PREREQ_CONTRACT:
+        if not isinstance(handoff, dict) or validate_request(handoff) != DISPOSABLE_FILE_CONTRACT:
             raise ValueError("bounded delivery requires Horizon handoff")
         context = handoff.get("handoff_context", {})
         if (context.get("delivery_profile") != DISPOSABLE_DELIVERY_PROFILE
@@ -120,7 +143,7 @@ class BoundedDeliveryAdapter:
             raise ValueError("delivery cancelled; reconciliation required")
         if self._started is None:
             raise ValueError("delivery did not start")
-        remaining = 600 - (time.monotonic() - self._started)
+        remaining = self._budget - (time.monotonic() - self._started)
         if remaining <= 0:
             raise ValueError("delivery time budget exhausted")
         return remaining
@@ -131,6 +154,7 @@ class BoundedDeliveryAdapter:
         if any(p.is_symlink() for p in (root, *root.parents)) or list(root.iterdir()):
             raise ValueError("delivery requires fresh empty workspace")
         self._started = time.monotonic()
+        self._budget = min(600.0, request.timeout)
         role = Path(request.artifact_dir)
         write_once(role / "delivery-intent.json", canonical_json({
             "profile": DISPOSABLE_DELIVERY_PROFILE, "request_digest": handoff["request_digest"],
@@ -171,13 +195,20 @@ class BoundedDeliveryAdapter:
 
     start = execute
 
+    def review_evidence(self, cwd):
+        source = self._check_file(cwd)
+        return {"name": "deliverable", "filename": source.name,
+                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "observed_content": source.read_text(), "expected_content": self.spec["content"],
+                "spec_digest": digest_value(self.spec), "profile": DISPOSABLE_DELIVERY_PROFILE}
+
     def finalize_delivery(self, request, execution, review, routing_record):
         """Called only after worker's evidence-bound verdict gate approves."""
         handoff = self._request(request)
         self.remaining_seconds()
         if review.status != "success" or review.exit_code != 0 or review.error_classification:
             raise ValueError("passing review required")
-        if not isinstance(review.structured_payload, dict) or review.structured_payload.get("verdict") != "approve":
+        if bound_delivery_verdict(review.structured_payload, request.metadata["acceptance_criteria"], self.review_evidence(request.cwd)) != "approve":
             raise ValueError("passing prior-review verdict required")
         if not routing_record or identities_conflict(
             (self.provider, self.model), (review.provider, review.model)
@@ -200,7 +231,9 @@ class BoundedDeliveryAdapter:
                    "review": {**routing_record, "verdict": "approve", "adapter_id": review.adapter_id,
                               "stdout_sha256": review.stdout_sha256, "result": review.structured_payload},
                    "sequence": ["scope-validated", "implementation", "exact-file-acceptance", "independent-review"],
-                   "production_release": "not-authorized", "automatic_retries": 0}
+                   "production_release": "not-authorized", "automatic_retries": 0,
+                   "billing_attestation": {"source": "operator-confirmed-account-setting", "on_demand_disabled": True,
+                                           "programmatically_verified": False, "transport": "cursor-subscription"}}
         write_once(root / "delivery-receipt.json", canonical_json(history))
         write_once(root / "rollback.txt", b"Discard this disposable attempt workspace; no deployed changes.\n")
         artifacts = [{"path": p.name, "bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
@@ -209,10 +242,11 @@ class BoundedDeliveryAdapter:
             "schema_version": "gateway-subworkflow-product.v1", "product_contract": handoff["product_contract"],
             "handoff_id": handoff["handoff_id"], "parent_run_id": handoff["run_id"],
             "parent_task_id": handoff["parent_task_id"], "provider_run_id": handoff["run_id"],
-            "disposition": HORIZON_PREREQ_CONTRACT.success_disposition,
+            "disposition": DISPOSABLE_FILE_CONTRACT.success_disposition,
             "target_identity": {"repository": "GinterVonHelsig/horizon", "scope": "isolated-worktree"},
-            "capability": {"prerequisite_id": self.spec["prerequisite_id"], "implementation_verified": True,
-                           "disposable_tests_passed": True, "capability_sha256": artifacts[1]["sha256"]},
+            "capability": {"prerequisite_id": self.spec["prerequisite_id"], "exact_file_verified": True,
+                           "general_test_suite_run": False, "validation_kind": "exact-content-comparison",
+                           "capability_sha256": artifacts[0]["sha256"]},
             "provenance": {"source_sha256": artifacts[0]["sha256"], "request_digest": handoff["request_digest"],
                            "allowed_mutations_digest": handoff["allowed_mutations_digest"],
                            "forbidden_mutations_digest": handoff["forbidden_mutations_digest"]},

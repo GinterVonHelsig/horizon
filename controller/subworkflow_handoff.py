@@ -34,10 +34,11 @@ class ProviderContract:
     forbidden_mutations: tuple[str, ...]
     timeout_seconds: int = 1800
     max_attempts: int = 5
+    completed_disposition: str | None = None
 
     @property
     def success_disposition(self) -> str:
-        return self.failure_code.replace("BLOCKED_", "PASS_", 1).replace("_MISSING", "_DELIVERED")
+        return self.completed_disposition or self.failure_code.replace("BLOCKED_", "PASS_", 1).replace("_MISSING", "_DELIVERED")
 
     @property
     def allowed_mutations_digest(self) -> str:
@@ -93,6 +94,20 @@ VM9201_CONTRACT = ProviderContract(
         "broker-trading",
         "unrestricted-commands",
     ),
+)
+
+DISPOSABLE_FILE_CONTRACT = ProviderContract(
+    failure_code=HORIZON_PREREQ_FAILURE,
+    provider_key="gateway-delivery-disposable-file-provider",
+    target="horizon-disposable-file-delivery",
+    product_contract="gateway-delivery-disposable-file-product.v1",
+    objective="Deliver and independently verify one preauthorized disposable text file",
+    executor_adapter="gateway-delivery-disposable-file",
+    auditor_adapter="cursor-independent-review",
+    allowed_mutations=HORIZON_PREREQ_CONTRACT.allowed_mutations,
+    forbidden_mutations=HORIZON_PREREQ_CONTRACT.forbidden_mutations,
+    timeout_seconds=600, max_attempts=2,
+    completed_disposition="PASS_DISPOSABLE_FILE_VERIFIED",
 )
 
 PROVIDER_REGISTRY: dict[str, ProviderContract] = {
@@ -165,6 +180,13 @@ def build_handoff_request(
     if not SAFE_FAILURE.fullmatch(failure_code):
         raise HandoffValidationError("failure_code_invalid")
     evidence_root = _validate_relative_path(request_artifact_root, "evidence_root")
+    profile = (handoff_context or {}).get("delivery_profile")
+    if profile is not None:
+        if contract != HORIZON_PREREQ_CONTRACT or profile != DISPOSABLE_DELIVERY_PROFILE:
+            raise HandoffValidationError("unsupported_delivery_profile")
+        _validate_hex(handoff_context.get("delivery_spec_digest"), "delivery_spec_digest")
+        _validate_id(handoff_context.get("prerequisite_node_id"), "prerequisite_node_id")
+        contract = DISPOSABLE_FILE_CONTRACT
     immutable: dict[str, Any] = {
         "schema_version": "gateway-subworkflow-handoff.v1",
         "run_id": run_id,
@@ -203,18 +225,6 @@ def build_handoff_request(
         "request_digest": request_digest,
         "status": "created",
     }
-    profile = (handoff_context or {}).get("delivery_profile")
-    if profile is not None:
-        if contract != HORIZON_PREREQ_CONTRACT or profile != DISPOSABLE_DELIVERY_PROFILE:
-            raise HandoffValidationError("unsupported_delivery_profile")
-        _validate_hex(handoff_context.get("delivery_spec_digest"), "delivery_spec_digest")
-        _validate_id(handoff_context.get("prerequisite_node_id"), "prerequisite_node_id")
-        # Explicit opt-in, digest-bound transport. Legacy requests stay legacy.
-        request["auditor_adapter"] = "cursor-independent-review"
-        # One pre-intent worker reclaim; durable intent still permits only one
-        # implementation call. This is not authorization to replay effects.
-        request["max_attempts"] = 2
-        request["timeout_seconds"] = 600
     _scan_secret(request)
     return request
 
@@ -235,13 +245,13 @@ def validate_request(request: Mapping[str, Any]) -> ProviderContract:
     for key, value in expected.items():
         if key != "status" and request.get(key) != value:
             raise HandoffValidationError("request_contract_or_digest_mismatch")
-    return contract
+    return DISPOSABLE_FILE_CONTRACT if request.get("handoff_context", {}).get("delivery_profile") == DISPOSABLE_DELIVERY_PROFILE else contract
 
 
 def _validate_target_identity(value: Any, contract: ProviderContract) -> dict[str, str]:
     if not isinstance(value, Mapping):
         raise HandoffValidationError("target_identity_missing")
-    if contract == HORIZON_PREREQ_CONTRACT:
+    if contract in (HORIZON_PREREQ_CONTRACT, DISPOSABLE_FILE_CONTRACT):
         if value != {"repository": "GinterVonHelsig/horizon", "scope": "isolated-worktree"}:
             raise HandoffValidationError("target_identity_mismatch")
         return dict(value)
@@ -281,9 +291,6 @@ def validate_product(product_path: Path, request: Mapping[str, Any], artifact_ro
     }
     if set(product) != allowed_product_keys:
         raise HandoffValidationError("product_keys_invalid")
-    contract = provider_for_failure(str(request.get("failure_code", "")))
-    if contract is None:
-        raise HandoffValidationError("no_registered_subworkflow")
     if product.get("schema_version") != "gateway-subworkflow-product.v1":
         raise HandoffValidationError("product_schema_invalid")
     if product.get("product_contract") != contract.product_contract:
@@ -302,7 +309,7 @@ def validate_product(product_path: Path, request: Mapping[str, Any], artifact_ro
     if not isinstance(provenance, Mapping):
         raise HandoffValidationError("provenance_missing")
     _validate_hex(provenance.get("source_sha256"), "source_sha256")
-    if contract == HORIZON_PREREQ_CONTRACT:
+    if contract in (HORIZON_PREREQ_CONTRACT, DISPOSABLE_FILE_CONTRACT):
         if provenance.get("request_digest") != request["request_digest"]:
             raise HandoffValidationError("provenance_request_mismatch")
         if provenance.get("allowed_mutations_digest") != contract.allowed_mutations_digest or provenance.get("forbidden_mutations_digest") != contract.forbidden_mutations_digest:
@@ -311,8 +318,14 @@ def validate_product(product_path: Path, request: Mapping[str, Any], artifact_ro
     capability = product.get("capability")
     if not isinstance(capability, Mapping):
         raise HandoffValidationError("capability_proof_missing")
-    if contract == HORIZON_PREREQ_CONTRACT:
-        if set(capability) != {"prerequisite_id", "implementation_verified", "disposable_tests_passed", "capability_sha256"} or capability.get("implementation_verified") is not True or capability.get("disposable_tests_passed") is not True:
+    if contract in (HORIZON_PREREQ_CONTRACT, DISPOSABLE_FILE_CONTRACT):
+        if contract == DISPOSABLE_FILE_CONTRACT:
+            if (set(capability) != {"prerequisite_id", "exact_file_verified", "general_test_suite_run", "validation_kind", "capability_sha256"}
+                    or capability.get("exact_file_verified") is not True
+                    or capability.get("general_test_suite_run") is not False
+                    or capability.get("validation_kind") != "exact-content-comparison"):
+                raise HandoffValidationError("exact_file_proof_missing")
+        elif set(capability) != {"prerequisite_id", "implementation_verified", "disposable_tests_passed", "capability_sha256"} or capability.get("implementation_verified") is not True or capability.get("disposable_tests_passed") is not True:
             raise HandoffValidationError("capability_proof_missing")
         _validate_id(capability.get("prerequisite_id"), "prerequisite_id")
         expected_id = request.get("handoff_context", {}).get("prerequisite_node_id")
@@ -360,7 +373,7 @@ def validate_product(product_path: Path, request: Mapping[str, Any], artifact_ro
         if hashlib.sha256(_read_bytes(artifact_file)).hexdigest() != artifact_sha256:
             raise HandoffValidationError("artifact_digest_mismatch")
         validated_artifacts.append({"path": artifact_path, "sha256": artifact_sha256, "bytes": artifact_bytes})
-    if contract == HORIZON_PREREQ_CONTRACT:
+    if contract in (HORIZON_PREREQ_CONTRACT, DISPOSABLE_FILE_CONTRACT):
         digests = {entry["sha256"] for entry in validated_artifacts}
         if capability["capability_sha256"] not in digests or provenance["source_sha256"] not in digests:
             raise HandoffValidationError("provenance_artifact_missing")

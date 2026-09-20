@@ -23,6 +23,13 @@ def configuration():
     return json.loads(TEMPLATE.read_text())
 
 
+@pytest.fixture(autouse=True)
+def simulated_model_catalog(monkeypatch):
+    # No external harness calls in deterministic tests. The live qualification
+    # uses the real preflight and catalog. Admission/identity checks remain real.
+    monkeypatch.setattr("worker.preflight_adapters", lambda config, **kwargs: {"ok": True})
+
+
 class SimulatedCursor:
     provider = "cursor"
     kind = "cursor_cli"
@@ -80,7 +87,7 @@ def scenario(db_url, artifact_root):
 
 def make_worker(scenario, root, *, reject=False, writer_fault=None, reviewer_fault=None):
     parent, config, spec, handoff = scenario
-    author = SimulatedCursor("gateway-delivery", "composer-2.5", spec, fault=writer_fault)
+    author = SimulatedCursor("gateway-delivery-disposable-file", "composer-2.5", spec, fault=writer_fault)
     review = SimulatedCursor("cursor-independent-review", "cursor-grok-4.6-high", spec, review=True, reject=reject, fault=reviewer_fault)
     provider = BoundedDeliveryAdapter(author, spec)
     worker = TaskWorker(parent, root, {provider.adapter_id: provider, review.adapter_id: review}, adapter_config=config)
@@ -107,6 +114,21 @@ def test_disposable_delivery_and_bound_history(scenario, artifact_root):
     assert history["author"]["model"] == "composer-2.5"
     assert history["request_digest"] == request["request_digest"]
     assert history["automatic_retries"] == 0
+    data = json.loads(product.read_text())
+    assert data["product_contract"] == "gateway-delivery-disposable-file-product.v1"
+    assert data["disposition"] == "PASS_DISPOSABLE_FILE_VERIFIED"
+    assert data["capability"]["general_test_suite_run"] is False
+    assert "disposable_tests_passed" not in data["capability"]
+    assert history["billing_attestation"]["programmatically_verified"] is False
+    source_digest = hashlib.sha256((product.parent / spec["filename"]).read_bytes()).hexdigest()
+    for criterion in history["review"]["result"]["criteria"]:
+        assert criterion["evidence_refs"] == [{"name": "deliverable", "sha256": source_digest}]
+    for field, forged in (("product_contract", "horizon-prerequisite-product.v1"),
+                          ("disposition", "PASS_HORIZON_PREREQ_DELIVERED")):
+        product.write_text(json.dumps({**data, field: forged}))
+        with pytest.raises(ValueError):
+            validate_product(product, request, artifact_root)
+    product.write_text(json.dumps(data))
 
 
 @pytest.mark.parametrize("reject,writer_fault,reviewer_fault", [
@@ -136,7 +158,7 @@ def test_author_collision_stops_before_execution(scenario, artifact_root):
 
 def test_spec_digest_mismatch_stops_before_model(scenario, artifact_root):
     worker, author, reviewer = make_worker(scenario, artifact_root)
-    worker._adapters["gateway-delivery"].spec["content"] = "changed"
+    worker._adapters["gateway-delivery-disposable-file"].spec["content"] = "changed"
     result = worker.run_once("disposable-provider", "simulated")
     assert result.terminal_state.startswith("blocked")
     assert author.calls == reviewer.calls == 0
@@ -144,9 +166,9 @@ def test_spec_digest_mismatch_stops_before_model(scenario, artifact_root):
 
 def test_profile_routes_are_explicit_and_legacy_unchanged():
     config = configuration()
-    validate_task_routes(config, "gateway-delivery", "cursor-independent-review")
+    validate_task_routes(config, "gateway-delivery-disposable-file", "cursor-independent-review")
     registry = AdapterRegistry.from_config(config, artifact_dir=Path("/tmp/not-executed"), validate_executables=False)
-    assert isinstance(registry.get("gateway-delivery"), BoundedDeliveryAdapter)
+    assert isinstance(registry.get("gateway-delivery-disposable-file"), BoundedDeliveryAdapter)
     assert registry.get("cursor-independent-review").cursor_mode == "ask"
     args = registry.get("cursor-independent-review")._build_argv("review")
     assert "ask" in args and "--force" not in args
@@ -156,7 +178,7 @@ def test_profile_routes_are_explicit_and_legacy_unchanged():
     validate_request(legacy)
     config["adapters"][1]["id"] = "openrouter-independent-review"
     with pytest.raises(ValueError, match="read-only cursor"):
-        validate_task_routes(config, "gateway-delivery", "openrouter-independent-review")
+        validate_task_routes(config, "gateway-delivery-disposable-file", "openrouter-independent-review")
 
 
 @pytest.mark.parametrize("field,value", [("filename", "../escape.txt"), ("profile", "full-release"), ("content", "")])
@@ -168,7 +190,10 @@ def test_unsupported_spec_is_rejected(field, value):
 
 def _killed_provider(db_url, root, handoff, after_effect):
     from test_only.disposable_harness import enable_disposable_harness
+    import worker as worker_module
     enable_disposable_harness()
+    # Spawned processes do not inherit pytest's monkeypatch fixture.
+    worker_module.preflight_adapters = lambda config, **kwargs: {"ok": True}
     config = configuration()
     parent = ParentController(db_url, artifact_root=root, adapter_config=config, lease_holder=False, stale_after=2)
     if after_effect:
@@ -224,7 +249,7 @@ def test_bounded_profile_has_two_claims_one_execution_and_unknown_profiles_fail(
 @pytest.mark.parametrize("cause", ["deadline", "cancel"])
 def test_budget_or_cancellation_stops_before_review(scenario, artifact_root, cause):
     worker, author, review = make_worker(scenario, artifact_root)
-    provider = worker._adapters["gateway-delivery"]
+    provider = worker._adapters["gateway-delivery-disposable-file"]
     execute = provider.execute
     def expire_after_execution(request):
         result = execute(request)
@@ -238,3 +263,72 @@ def test_budget_or_cancellation_stops_before_review(scenario, artifact_root, cau
     assert result.terminal_state.startswith("blocked")
     assert author.calls == 1 and review.calls == 0
     assert not list(artifact_root.rglob("handoff-product.json"))
+
+
+@pytest.mark.parametrize("boundary", ["queue", "executor", "reviewer"])
+def test_durable_deadline_cannot_reset_or_publish_late(scenario, artifact_root, boundary):
+    parent, _, _, handoff = scenario
+    worker, author, reviewer = make_worker(scenario, artifact_root)
+    def age(seconds):
+        with parent._repo.transaction() as cur:
+            cur.execute("UPDATE subworkflow_handoffs SET created_at=clock_timestamp() - (%s * interval '1 second') WHERE handoff_id=%s", (seconds, handoff["handoff_id"]))
+    age(601 if boundary == "queue" else 599)
+    if boundary != "queue":
+        adapter = author if boundary == "executor" else reviewer
+        execute = adapter.execute
+        def cross_deadline(request):
+            assert 0 < request.timeout < 2  # Queue time is not a new call budget.
+            result = execute(request)
+            age(601)
+            return result
+        adapter.execute = cross_deadline
+    result = worker.run_once("disposable-provider", "deadline")
+    assert result.terminal_state.startswith("blocked")
+    assert not list(artifact_root.rglob("handoff-product.json"))
+    assert author.calls == (0 if boundary == "queue" else 1)
+    assert reviewer.calls == (1 if boundary == "reviewer" else 0)
+    with parent._repo.transaction() as cur:
+        cur.execute("SELECT state FROM subworkflow_handoffs WHERE handoff_id=%s", (handoff["handoff_id"],))
+        assert cur.fetchone()["state"] == "expired"
+    assert parent.task("parent").state == "parked"
+
+
+def test_selected_provider_review_preflight_runs_before_effects(scenario, artifact_root, monkeypatch):
+    from harness_adapters.preflight import AdapterPreflightError
+    worker, author, reviewer = make_worker(scenario, artifact_root)
+    observed = []
+    def unavailable(config, **kwargs):
+        observed.append(config["routes"])
+        raise AdapterPreflightError("configured reviewer unavailable")
+    monkeypatch.setattr("worker.preflight_adapters", unavailable)
+    with pytest.raises(AdapterPreflightError):
+        worker.run_once("disposable-provider", "unavailable")
+    assert observed == [{"default_executor": "gateway-delivery-disposable-file", "default_auditor": "cursor-independent-review"}]
+    assert author.calls == reviewer.calls == 0
+
+
+def test_review_must_reference_deliverable_not_acceptance_questions(scenario, artifact_root):
+    worker, author, reviewer = make_worker(scenario, artifact_root)
+    execute = reviewer.execute
+    def wrong_reference(request):
+        from dataclasses import replace
+        result = execute(request)
+        for criterion in result.structured_payload["criteria"]:
+            criterion["evidence_refs"] = [{"name": "stdout", "sha256": request.metadata["executor_evidence"]["stdout_sha256"]}]
+        path = Path(request.artifact_dir) / result.stdout_artifact_path
+        path.write_text(json.dumps(result.structured_payload))
+        return replace(result, stdout_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    reviewer.execute = wrong_reference
+    result = worker.run_once("disposable-provider", "source-binding")
+    assert result.terminal_state.startswith("blocked")
+    assert author.calls == reviewer.calls == 1
+    assert not list(artifact_root.rglob("handoff-product.json"))
+
+
+def test_bounded_registry_can_coexist_with_legacy_routes():
+    from test_only.recovery_fakes import route_config
+    config = configuration()
+    legacy = route_config("gateway-delivery", "openrouter-independent-review")
+    config["adapters"].extend(legacy["adapters"])
+    validate_task_routes(config, "gateway-delivery-disposable-file", "cursor-independent-review")
+    validate_task_routes(config, "gateway-delivery", "openrouter-independent-review")

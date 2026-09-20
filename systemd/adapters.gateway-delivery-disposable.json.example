@@ -1,8 +1,8 @@
 {
-  "routes": {"default_executor": "gateway-delivery", "default_auditor": "cursor-independent-review"},
+  "routes": {"default_executor": "gateway-delivery-disposable-file", "default_auditor": "cursor-independent-review"},
   "adapters": [
     {
-      "id": "gateway-delivery", "kind": "gateway_delivery", "provider": "cursor", "model": "composer-2.5",
+      "id": "gateway-delivery-disposable-file", "kind": "gateway_delivery", "provider": "cursor", "model": "composer-2.5",
       "executable": "/usr/bin/cursor-agent", "approval_mode": "never", "credential_env": [],
       "timeout_seconds": 300, "allowed_cwd_roots": ["/tmp/horizon-disposable-provider"],
       "subscription_only": true, "on_demand_disabled": true,

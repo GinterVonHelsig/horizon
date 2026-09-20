@@ -19,8 +19,10 @@ service mutation or installed-file repair was used in this discovery.
 
 Source baseline: GinterVonHelsig/horizon
 `cdd7989cbc332293a823b4d4bdb60ea056b3986c`, branch
-`codex/repair-horizon-recovery`, PR #1. This follow-up changes documentation,
-test fixtures and CI coverage only; the independently reviewed runtime is unchanged.
+`codex/repair-horizon-recovery`, PR #1. The discovery follow-up at
+`5114ab118dd3aa73f3373eb085b631b2f403545d` changed only documentation, tests and CI.
+Later commits add runtime provider code; the earlier independent runtime review
+does not cover those later changes.
 
 ## Intent versus implementation
 

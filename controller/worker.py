@@ -219,6 +219,7 @@ class TaskWorker:
                 )
 
             try:
+                self._refresh_delivery_budget(context)
                 self._authorize_adapter_execution(run_id, executor_id, context)
                 executor_request = self._build_executor_request(
                     task, attempt_id, executor_id, attempt_dir / "executor", context
@@ -289,6 +290,7 @@ class TaskWorker:
 
             try:
                 # Recheck actual adapter identities immediately before review.
+                self._refresh_delivery_budget(context)
                 self._resolve_routing(context)
                 self._authorize_adapter_execution(run_id, auditor_id, context)
                 auditor_request = self._build_auditor_request(
@@ -316,12 +318,19 @@ class TaskWorker:
             except Exception as exc:
                 return self._handle_failure(task, generation, f"child_crash:{type(exc).__name__}", context=context)
 
-            verdict = bound_auditor_verdict(
-                auditor_result.structured_payload,
-                acceptance=auditor_request.metadata["acceptance_criteria"],
-                trusted=auditor_request.metadata["trusted_evidence"],
-                executor_evidence=executor_evidence,
-            ) if self._execution_succeeded(auditor_result) else None
+            verdict = None
+            if context.get("delivery_profile") and self._execution_succeeded(auditor_result):
+                from bounded_delivery import bound_delivery_verdict
+                verdict = bound_delivery_verdict(auditor_result.structured_payload,
+                                                auditor_request.metadata["acceptance_criteria"],
+                                                auditor_request.metadata["trusted_evidence"])
+            elif self._execution_succeeded(auditor_result):
+                verdict = bound_auditor_verdict(
+                    auditor_result.structured_payload,
+                    acceptance=auditor_request.metadata["acceptance_criteria"],
+                    trusted=auditor_request.metadata["trusted_evidence"],
+                    executor_evidence=executor_evidence,
+                )
             if verdict == "approve":
                 if context.get("handoff_id"):
                     complete_handoff = getattr(self._controller, "complete_subworkflow_handoff", None)
@@ -330,6 +339,7 @@ class TaskWorker:
                         return self._handle_failure(task, generation, "configuration_failure:handoff_controller_missing", context=context)
                     try:
                         if context.get("delivery_profile"):
+                            self._refresh_delivery_budget(context)
                             product_path = executor.finalize_delivery(
                                 executor_request, executor_result, auditor_result, context.get("review_routing"),
                             )
@@ -743,11 +753,19 @@ class TaskWorker:
             from model_routing import authorize_task_review
             record = authorize_task_review(self._routing_policy, identities[0], identities[1])
             context["review_routing"] = record.to_dict()
-            if self._adapter_config is not None:
-                preflight_adapters({**self._adapter_config, "routes": {
-                    "default_executor": executor_id, "default_auditor": auditor_id,
-                }}, probe_http=True)
+        if (self._routing_policy is not None or context.get("delivery_profile")) and self._adapter_config is not None:
+            preflight_adapters({**self._adapter_config, "routes": {
+                "default_executor": executor_id, "default_auditor": auditor_id,
+            }}, probe_http=True)
         return executor_id, auditor_id
+
+    def _refresh_delivery_budget(self, context: dict[str, Any]) -> None:
+        if not context.get("delivery_profile"):
+            return
+        remaining = self._controller.validate_handoff_request(context["handoff_request"])
+        if not isinstance(remaining, (float, int)) or isinstance(remaining, bool) or remaining <= 0:
+            raise WorkerConfigurationError("durable delivery time budget unavailable")
+        context["timeout_seconds"] = float(remaining)
 
     def _validate_execution_identity(self, adapter_id: str, result: HarnessResult) -> None:
         if self._routing_policy is None and not any(getattr(a, "kind", None) == "gateway_delivery" for a in self._adapters.values()):
@@ -854,11 +872,14 @@ class TaskWorker:
         executor_evidence: list[dict[str, str]],
     ) -> HarnessRequest:
         if context.get("delivery_profile"):
-            context = {**context, "timeout_seconds": self._adapters[context["executor_adapter"]].remaining_seconds()}
+            context = {**context, "timeout_seconds": min(context["timeout_seconds"], self._adapters[context["executor_adapter"]].remaining_seconds())}
         acceptance = normalize_acceptance_criteria(context.get("acceptance_criteria", []))
-        trusted = collect_trusted_evidence(artifact_root=self._artifact_root,
-            role_dir=role_dir.parent / "executor", executor_result=executor_result,
-            executor_evidence=executor_evidence, acceptance=acceptance)
+        if context.get("delivery_profile"):
+            trusted = self._adapters[context["executor_adapter"]].review_evidence(context["cwd"])
+        else:
+            trusted = collect_trusted_evidence(artifact_root=self._artifact_root,
+                role_dir=role_dir.parent / "executor", executor_result=executor_result,
+                executor_evidence=executor_evidence, acceptance=acceptance)
         immutable = {
             "adapter_id": executor_result.adapter_id,
             "model": executor_result.model,
@@ -870,6 +891,8 @@ class TaskWorker:
             "stderr_sha256": executor_result.stderr_sha256,
         }
         structured = executor_result.structured_payload
+        if context.get("delivery_profile"):
+            immutable["artifacts"] = [{"stream": "deliverable", "sha256": trusted["sha256"], "filename": trusted["filename"]}]
         extracted = structured.get("extracted_json") if isinstance(structured, dict) else None
         if isinstance(extracted, dict):
             immutable["executor_extracted_json"] = extracted
