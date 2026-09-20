@@ -9,10 +9,9 @@ configured model string. Meta-router ids under the ``openrouter/`` vendor prefix
 including ``openrouter/auto``, are forbidden. Incomplete identity (missing or
 empty after normalize) is not independence: callers must fail closed.
 
-Provider remains part of identity: the same model through two different
-provider labels is still two lanes unless a later operator envelope chooses
-otherwise. TaskRoutingSnapshot is ID-only and is not evidence of lane
-independence.
+Provider records transport provenance, not independence. The September routing
+continuation forbids the same model through different transports from reviewing
+itself. TaskRoutingSnapshot is ID-only, not evidence of lane independence.
 """
 
 from __future__ import annotations
@@ -59,7 +58,45 @@ def identities_conflict(
 ) -> bool:
     if left is None or right is None:
         raise ValueError("identities must be complete")
-    return left == right
+    if canonical_model(left[1]) == canonical_model(right[1]):
+        return True
+    try:
+        return model_family(left[1]) == model_family(right[1])
+    except ValueError:
+        # Non-policy adapters (including deterministic test adapters) can have
+        # opaque identities. Phase review selection separately rejects unknown
+        # families, rather than treating this result as qualification evidence.
+        return False
+
+
+def canonical_model(model: str) -> str:
+    """Collapse known transport aliases and effort suffixes, never infer a lane."""
+    value = normalize_model_part(model)
+    if "/" in value:
+        vendor, name = value.split("/", 1)
+        if vendor in {"openai", "x-ai", "z-ai", "google", "qwen", "moonshotai", "deepseek", "anthropic"}:
+            value = name
+    if value.startswith("cursor-"):
+        value = value[len("cursor-"):]
+    for suffix in ("-thinking-high", "-xhigh", "-medium", "-high", "-max"):
+        # 'max' is part of Qwen's model identity, not an effort alias.
+        if value.endswith(suffix) and not value.startswith("qwen"):
+            value = value[:-len(suffix)]
+            break
+    return value
+
+
+def model_family(model: str) -> str:
+    """Known upstream families for policy review seats; unknown means blocked."""
+    value = canonical_model(model)
+    for prefix, family in (
+        ("gpt-", "openai"), ("grok-", "x-ai"), ("glm-", "z-ai"),
+        ("gemini-", "google"), ("qwen", "qwen"), ("kimi-", "moonshotai"),
+        ("deepseek-", "deepseek"), ("claude-", "anthropic"), ("composer-", "cursor"),
+    ):
+        if value.startswith(prefix):
+            return family
+    raise ValueError("unknown model family; independent review cannot be established")
 
 
 def identity_is_forbidden(identity: tuple[str, str] | None) -> bool:

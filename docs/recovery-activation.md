@@ -6,6 +6,12 @@ unresolved. Do not resume P49, goal-3eb7b972ec15809e, or any previously stopped 
 
 ## Preconditions and preparation
 
+The September continuation introduces routing contract v3 and required author/
+availability inputs. Read routing-reconciliation.md before considering this
+procedure. The installed external host-review launcher does not consume the new
+selector; resolving and testing that integration is an activation prerequisite,
+not permission to modify installed code during this repair.
+
 1. Review and merge the exact candidate from GinterVonHelsig/horizon
    codex/repair-horizon-recovery into main only after required checks and independent
    review pass. Record the approved full SHA and its tree hash. Preserve

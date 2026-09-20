@@ -1,9 +1,8 @@
-version: 2
-month: 2026-08
+version: 3
+month: 2026-09
 coordinator:
   name: gateway-delivery
   provider: openai
-  base_url: https://openrouter.ai/api/v1
   model: gpt-5.6-luna
   effort: medium
   fallbacks:
@@ -219,7 +218,7 @@ phases:
     role: adversarial-review-2
     provider: openai
     model: gpt-6-astra
-    effort: medium
+    effort: high
     routing_note: operator-astra-high-assignment-20260916
     required: true
     fallbacks:
@@ -463,86 +462,16 @@ conditional_escalation:
       trigger: unavailable-or-invalid-after-1.7-or-primary-still-rejected
       qualified_routes_only: true
 reviews:
-- phase: 1.5
-  role: adversarial-review-1
-  provider: openrouter
-  model: moonshotai/kimi-k3
-  effort: max
-  required: true
-  fallbacks:
-  - provider: cursor
-    model: kimi-k3-max
-    effort: max
-    reason: qualified-cursor-fallback-20260911
-  - provider: cursor
-    model: gemini-3.8-flash-high
-    effort: high
-    reason: qualified-cursor-fallback-20260911
-- phase: 1.6
-  role: adversarial-review-2
-  provider: openai
-  model: gpt-6-astra
-  effort: high
-  required: true
-  fallbacks:
-  - provider: openrouter
-    model: x-ai/grok-4.6
-    effort: high
-  - provider: cursor
-    model: claude-opus-5-thinking-high
-    effort: high
-  routing_note: operator-astra-high-assignment-20260916
-- phase: 1.7
-  role: adversarial-review-3
-  provider: openai
-  model: gpt-6-astra
-  effort: max
-  enabled: true
-  qualified: true
-  required: false
-  invoke_by_default: false
-  status: conditional-escalation
-  escalation_trigger: unavailable-or-invalid-primary-review
-  preserves_substantive_findings: true
-  fallbacks:
-  - provider: cursor
-    model: gpt-5.6-sol-max
-    effort: max
-    reason: qualified-cursor-fallback-20260911
-  - provider: cursor
-    model: gpt-5.5-high
-    effort: high
-    reason: qualified-cursor-fallback-20260911
-- phase: 1.8
-  role: adversarial-review-4
-  provider: cursor
-  model: claude-fable-5-1-thinking-high
-  effort: high
-  enabled: true
-  qualified: true
-  required: false
-  invoke_by_default: false
-  status: conditional-escalation
-  escalation_trigger: unavailable-or-invalid-after-1.7-or-primary-still-rejected
-  preserves_substantive_findings: true
-  fallbacks:
-  - provider: openrouter
-    model: anthropic/claude-fable-5.1
-    effort: high
-    reason: qualified-openrouter-fallback-20260911
-  - provider: openrouter
-    model: z-ai/glm-5.3
-    effort: max
-    reason: qualified-openrouter-fallback-20260911
-- phase: 1.9
-  role: adversarial-review-5
-  provider: openrouter
-  model: qwen/qwen3.8-max
-  effort: high
-  enabled: false
-  status: disabled-placeholder
-  disabled_reason: operator-requested-temporary-disable
-  required: false
+- phase: '1.5'
+  route_ref: '1.5'
+- phase: '1.6'
+  route_ref: '1.6'
+- phase: '1.7'
+  route_ref: '1.7'
+- phase: '1.8'
+  route_ref: '1.8'
+- phase: '1.9'
+  route_ref: '1.9'
 implementation:
   code:
     provider: cursor
@@ -691,50 +620,38 @@ independence:
   - '2'
   adversarial_slots:
     '1.5':
-      model: moonshotai/kimi-k3
-      effort: max
+      route_ref: '1.5'
     '1.6':
-      model: gpt-6-astra
-      effort: high
-      provider: openai
+      route_ref: '1.6'
     '4':
-      model: gpt-6-astra
-      effort: high
-      provider: openai
+      route_ref: '4'
     '6':
-      model: gpt-6-astra
-      effort: high
-      provider: openai
-  author_failover:
-    if_author_is: x-ai/grok-4.6
-    remap:
-      '1.6':
-        model: z-ai/glm-5.3
-        effort: max
-      '6':
-        model: qwen/qwen3.8-max
-        effort: xhigh
-    or_stop: true
+      route_ref: '6'
   author_failover_by_model:
     openai/gpt-6-astra:
       remap:
         '1.6':
+          provider: openrouter
           model: x-ai/grok-4.6
           effort: high
         '4':
+          provider: openrouter
           model: qwen/qwen3.8-max
           effort: xhigh
         '6':
+          provider: openrouter
           model: z-ai/glm-5.3
           effort: max
-      or_stop: false
+      or_stop: true
       reason: astra-authored-phases-1-2-cannot-self-review
     x-ai/grok-4.6:
       remap:
         '1.6':
+          provider: openrouter
           model: z-ai/glm-5.3
           effort: max
         '6':
+          provider: openrouter
           model: qwen/qwen3.8-max
           effort: xhigh
       or_stop: true

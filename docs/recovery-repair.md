@@ -153,12 +153,12 @@ replacement Gateway implementation. They exercise actual parsing, PostgreSQL
 registration, lease fencing, claims, worker execution, evidence persistence,
 independent review validation, provider handoff, and task finalization.
 
-Five required model-routing tests fail unchanged at the original base and the
-repair candidate: phases 0/1/2, 4, 6, a fallback provider, and phase 1.6 fallback
-expectations conflict with architecture/model-routing.yaml. The base reproduction
-is 5 failed / 4 passed in tests/test_model_routing.py. No model substitutions or
-test relaxations were made. Operator policy must select the intended routing
-contract before a separately scoped reconciliation can make CI green.
+The original candidate retained five routing failures also reproduced at base
+(5 failed / 4 passed). On 2026-09-20 the operator selected the September baseline
+with independence taking precedence. The separately authorized reconciliation
+updates those expectations alongside new safeguard tests, not by weakening the
+review gates. See routing-reconciliation.md for policy, compatibility and the
+remaining Gateway, external-review and bounded live-validation blockers.
 
 Read-only real-adapter preflight passed on Comms-01 for cursor-cli/composer-2.5
 and openrouter-claude-auditor/openai/gpt-5.6-sol, including relay health. No real
