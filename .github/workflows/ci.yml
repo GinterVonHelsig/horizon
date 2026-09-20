@@ -84,4 +84,7 @@ jobs:
             tests/test_goal_submitter.py \
             controller/test_recovery_acceptance.py \
             controller/test_subworkflow_handoff.py \
-            controller/test_subworkflow_handoff_integration.py
+            controller/test_subworkflow_handoff_integration.py \
+            controller/test_correlation_store_integration.py \
+            controller/test_prerequisite_orchestration_integration.py::test_prerequisite_orchestration_detects_delivers_and_is_idempotent \
+            controller/test_prerequisite_orchestration_integration.py::test_missing_gateway_binding_creates_no_provider_state
