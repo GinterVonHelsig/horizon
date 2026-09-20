@@ -213,8 +213,8 @@ def test_executor_success_without_auditor_approval_does_not_verify(artifact_root
     }
     worker = TaskWorker(controller, artifact_root, adapters)  # type: ignore[arg-type]
     worker.run_once("run-1", "worker-1")
-    assert controller.retries == ["task-1"]
-    assert controller.completions == []
+    assert controller.retries == []
+    assert controller.completions[-1] == ("task-1", "blocked")
 
 
 def test_non_retryable_failure_blocks_task(artifact_root: Path) -> None:
@@ -365,13 +365,13 @@ def test_worker_records_content_hashed_evidence(artifact_root: Path) -> None:
     assert controller.evidence[0]["artifact_path"].startswith("runs/run-1/attempts/attempt-task-1/executor/")
 
 
-def test_worker_retry_policy_parks_auth_but_retries_timeout(artifact_root: Path) -> None:
-    for classification, retryable, expected in [("auth_failure", False, "parked"), ("timeout", True, "retry_queued")]:
-        controller = FakeController()
-        controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
-        adapters = {"executor": ScriptedAdapter("executor", [_failure(retryable, classification)]), "auditor": ScriptedAdapter("auditor", [])}
-        result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
-        assert result and result.terminal_state == expected
+@pytest.mark.parametrize("classification,retryable,expected", [("auth_failure", False, "parked"), ("timeout", True, "retry_queued")])
+def test_worker_retry_policy_parks_auth_but_retries_timeout(artifact_root: Path, classification, retryable, expected) -> None:
+    controller = FakeController()
+    controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
+    adapters = {"executor": ScriptedAdapter("executor", [_failure(retryable, classification)]), "auditor": ScriptedAdapter("auditor", [])}
+    result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
+    assert result and result.terminal_state == expected
 
 
 def test_shutdown_cancelled_executor_requeues_instead_of_blocking(artifact_root: Path) -> None:
@@ -453,7 +453,7 @@ class RecoveringFakeController(ProductionShapedController):
         return dict(self.recover_payload)
 
 
-def test_malformed_executor_output_recovers_on_attempt_zero(artifact_root: Path) -> None:
+def test_malformed_executor_output_blocks_without_replaying(artifact_root: Path) -> None:
     controller = RecoveringFakeController()
     controller.tasks["task-1"] = FakeTask(
         "task-1", "run-1", "obj", state="scheduled", attempt=0
@@ -466,6 +466,6 @@ def test_malformed_executor_output_recovers_on_attempt_zero(artifact_root: Path)
     }
     result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
     assert result is not None
-    assert result.terminal_state == "retry_queued"
-    assert controller.recoveries == [0]
-    assert controller.completions == []
+    assert result.terminal_state == "blocked:executor_outcome_requires_review"
+    assert controller.recoveries == []
+    assert controller.completions == [("task-1", "blocked")]

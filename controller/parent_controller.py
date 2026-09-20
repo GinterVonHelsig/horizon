@@ -85,6 +85,7 @@ class ParentController:
         artifact_root: Path | None = None,
         max_retries: int = 5,
         lease_holder: bool = True,
+        adapter_config: dict | None = None,
     ) -> None:
         if stale_after <= 0:
             raise ValueError("stale_after must be positive")
@@ -94,6 +95,7 @@ class ParentController:
         self.stale_after = stale_after
         self.controller_lease_seconds = controller_lease_seconds
         self.lease_holder = lease_holder
+        self.adapter_config = adapter_config
         self.notifier = notifier
         self.clock = clock
         self.redis = redis or RedisAdvisory(None)
@@ -152,18 +154,58 @@ class ParentController:
 
     def register_run(self, run_id: str, state: str = "active") -> None:
         self._repo.register_run(run_id, state)
-        try:
+        if self.lease_holder:
             self._epochs[run_id] = self._repo.acquire_controller(
                 run_id, self.controller_owner, lease_seconds=self.controller_lease_seconds
             )
-        except StaleControllerEpochError:
-            self._epochs[run_id] = self._repo.acquire_controller(
-                run_id,
-                self.controller_owner,
-                lease_seconds=self.controller_lease_seconds,
-                force_takeover=True,
-            )
+        else:
+            self._resolve_epoch_from_active_controller(run_id)
         self._refresh_signal(run_id)
+
+    def reconcile_submission(self, run_id: str) -> str:
+        """Bootstrap missing rows without reopening state or stealing a lease."""
+        self._repo.register_run(run_id)
+        state = self._repo.controller_state(run_id)
+        with self._repo.transaction() as cur:
+            cur.execute("SELECT state FROM supervisor_runs WHERE run_id = %s", (run_id,))
+            run_state = cur.fetchone()["state"]
+        if not state["scheduling_enabled"] or run_state != "active" or self._goal_state_store.is_paused(run_id):
+            return "preserved_disabled"
+        if not state["lease_active"] and not self.lease_holder:
+            return "awaiting_controller"
+        self._ensure_epoch(run_id)
+        return "ready"
+
+    def validate_submission_routing(self, routing) -> None:
+        if routing is None:
+            raise ValueError("durable submission requires explicit executor and auditor routes")
+        self._validate_routes(routing.executor_adapter, routing.auditor_adapter)
+
+    def _validate_routes(self, executor: str, auditor: str) -> None:
+        from harness_adapters.registry import load_registry_config, validate_task_routes
+        config = self.adapter_config
+        if config is None:
+            config_path = os.environ.get("TOP_DELIVERY_ADAPTER_CONFIG")
+            if not config_path:
+                raise ValueError("missing adapter configuration for executable task")
+            config = load_registry_config(Path(config_path), validate_executables=False)
+        validate_task_routes(config, executor, auditor)
+
+    def validate_handoff_request(self, request: dict) -> None:
+        with self._repo.transaction() as cur:
+            cur.execute("SELECT request_json, state, EXTRACT(EPOCH FROM clock_timestamp() - created_at) AS age FROM subworkflow_handoffs WHERE handoff_id = %s AND run_id = %s AND provider_task_id = %s",
+                        (request["handoff_id"], request["run_id"], request["provider_task_id"]))
+            row = cur.fetchone()
+        if row is None or row["request_json"] != request:
+            raise ValueError("handoff request differs from durable authority")
+        if row["state"] not in {"dispatched", "running"}:
+            raise ValueError("handoff is not executable")
+        if float(row["age"]) >= request["timeout_seconds"]:
+            self._repo.expire_subworkflow_handoff(handoff_id=request["handoff_id"], run_id=request["run_id"], controller_epoch=self._ensure_epoch(request["run_id"]), reason="provider_time_budget_exhausted")
+            raise ValueError("provider time budget exhausted")
+        task = self.task(request["provider_task_id"])
+        if task.attempt > request["max_attempts"]:
+            raise ValueError("provider attempt budget exhausted")
 
     def start_or_preserve_run(self, run_id: str, state: str = "active") -> str:
         try:
@@ -253,6 +295,12 @@ class ParentController:
             request_artifact_root=f"runs/{run_id}/handoffs",
             handoff_context=handoff_context,
         )
+        # A coordinator skill name is not an executable adapter registration.
+        self._validate_routes(request["executor_adapter"], request["auditor_adapter"])
+        with self._repo.transaction() as cur:
+            cur.execute("SELECT 1 FROM subworkflow_handoffs WHERE provider_task_id = %s", (parent_task_id,))
+            if cur.fetchone():
+                raise ValueError("nested prerequisite repair is forbidden; provider must stop")
         handoff_root = self.artifact_root / "runs" / run_id / "handoffs" / str(request["handoff_id"])
         handoff_root.mkdir(parents=True, exist_ok=True)
         request_path = handoff_root / "request.json"
@@ -295,8 +343,16 @@ class ParentController:
         handoff_root = self.artifact_root / "runs" / run_id / "handoffs" / handoff_id
         request_path = handoff_root / "request.json"
         request = json.loads(request_path.read_text())
+        with self._repo.transaction() as cur:
+            cur.execute("SELECT request_json FROM subworkflow_handoffs WHERE handoff_id = %s AND run_id = %s", (handoff_id, run_id))
+            row = cur.fetchone()
+        authoritative = row["request_json"] if row else None
+        if isinstance(authoritative, str):
+            authoritative = json.loads(authoritative)
+        if authoritative != request:
+            raise ValueError("handoff request differs from durable authority")
         product = validate_product(product_path, request, self.artifact_root)
-        product_json = json.loads(product_path.read_text())
+        product_json = product.pop("validated_product")
         epoch = self._ensure_epoch(run_id)
         result = self._repo.complete_subworkflow_handoff(
             handoff_id=handoff_id,
@@ -445,6 +501,7 @@ class ParentController:
         if self._goal_state_store.is_paused(run_id):
             return None
         epoch = self._ensure_epoch(run_id)
+        self._repo.tick_stale(run_id, epoch, max_retries=self.max_retries)
         claim_options = {"expected_task_id": expected_task_id} if expected_task_id is not None else {}
         reclaimed = self._repo.claim_next(
             run_id, owner, controller_epoch=epoch, lease_seconds=self.stale_after, **claim_options
@@ -538,7 +595,8 @@ class ParentController:
             terminal_state=state,
         )
         self.emit(run_id, "task_completed", {"task_id": task_id, "state": state})
-        self.schedule_dependency_successors(run_id, task_id)
+        if state == "verified":
+            self.schedule_dependency_successors(run_id, task_id)
         return self.task(task_id)
 
     def schedule_dependency_successors(self, run_id: str, completed_task_id: str) -> None:

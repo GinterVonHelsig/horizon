@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, "disposable/**"]
+    branches: [main, "disposable/**", "codex/repair-horizon-recovery"]
 
 jobs:
   focused-unit:
@@ -45,3 +45,26 @@ jobs:
             tests/test_goal_cli.py \
             tests/test_artifact_owner.py \
             tests/test_goal_dependencies.py
+
+  disposable-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install pytest pyyaml cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
+      - name: Prepare isolated test prerequisites on disposable CI host
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql postgresql-contrib iproute2
+          sudo install -d -m 755 /etc/top-delivery
+      - name: Exercise real persistence with simulated model execution
+        run: |
+          sudo env PATH="$PATH" bash scripts/test-recovery-isolated.sh -q --tb=short \
+            controller/test_recovery_acceptance.py \
+            controller/test_subworkflow_handoff.py \
+            controller/test_subworkflow_handoff_integration.py

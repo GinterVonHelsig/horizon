@@ -38,6 +38,19 @@ _KIND_KEYS = {
 _ROUTE_KEYS = frozenset({"default_executor", "default_auditor"})
 
 
+def validate_task_routes(config: dict[str, Any], executor: str, auditor: str) -> None:
+    """Validate the selected pair, including identity and execution capability."""
+    ids = {item.get("id") for item in config.get("adapters", [])}
+    missing = sorted({executor, auditor} - ids)
+    if missing:
+        raise ValueError("missing adapter configuration: " + ", ".join(missing))
+    selected = {**config, "routes": {"default_executor": executor, "default_auditor": auditor}}
+    validate_registry_config(selected, validate_executables=False)
+    writer = next(item for item in config["adapters"] if item["id"] == executor)
+    if writer["kind"] == "http_openai":
+        raise ValueError("executor requires workspace execution capability; HTTP completion is review-only")
+
+
 def load_registry_config(path: Path, *, validate_executables: bool = True) -> dict[str, Any]:
     config = json.loads(path.read_text())
     validate_registry_config(config, validate_executables=validate_executables)

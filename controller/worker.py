@@ -7,6 +7,8 @@ import json
 import logging
 import signal
 import threading
+import os
+import psycopg2
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -31,14 +33,7 @@ from openrouter_budget import OpenRouterBudgetGuard, SilentFallbackError
 from terra_release_policy import ReleasePolicyInput, issue_authoritative_receipt
 from worktree_transport import WorktreeTransport
 from subworkflow_handoff import detect_capability_failure
-
-AUDITOR_SCHEMA = {
-    "type": "object",
-    "properties": {"verdict": {"type": "string", "enum": ["approve", "reject"]}},
-    "required": ["verdict"],
-    "additionalProperties": False,
-}
-
+from auditor_bind import AUDITOR_SCHEMA, normalize_acceptance_criteria, collect_trusted_evidence, bound_auditor_verdict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -233,6 +228,25 @@ class TaskWorker:
                     task, generation, f"configuration_failure:{type(exc).__name__}", context=context,
                 )
             try:
+                # Record intent durably BEFORE externally visible execution.
+                # A lost result cannot authorize a replay of the same logical task.
+                intents = self._artifact_root / "execution-intents"
+                intents.mkdir(mode=0o700, exist_ok=True)
+                intent = intents / (hashlib.sha256(f"{run_id}:{task.task_id}".encode()).hexdigest() + ".json")
+                try:
+                    fd = os.open(intent, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                except FileExistsError:
+                    self._controller.complete_task(run_id, task.task_id, generation, "blocked")
+                    return WorkerRunResult(task.task_id, "blocked:execution_outcome_requires_review")
+                with os.fdopen(fd, "w") as stream:
+                    json.dump({"task_id": task.task_id, "attempt_id": attempt_id, "state": "execution_intent"}, stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                directory_fd = os.open(intents, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
                 executor_result = self._execute_adapter(executor, executor_request)
                 executor_evidence = self._persist_validate_and_record(
                     run_id, task.task_id, attempt_id, fence, "executor", attempt_dir / "executor", executor_result
@@ -296,7 +310,12 @@ class TaskWorker:
             except Exception as exc:
                 return self._handle_failure(task, generation, f"child_crash:{type(exc).__name__}", context=context)
 
-            verdict = self._auditor_verdict(auditor_result)
+            verdict = bound_auditor_verdict(
+                auditor_result.structured_payload,
+                acceptance=auditor_request.metadata["acceptance_criteria"],
+                trusted=auditor_request.metadata["trusted_evidence"],
+                executor_evidence=executor_evidence,
+            ) if self._execution_succeeded(auditor_result) else None
             if verdict == "approve":
                 if context.get("handoff_id"):
                     complete_handoff = getattr(self._controller, "complete_subworkflow_handoff", None)
@@ -326,18 +345,21 @@ class TaskWorker:
                 self._complete_verified(run_id, task.task_id, generation)
                 return WorkerRunResult(task.task_id, "verified")
             if verdict == "reject":
-                return self._handle_failure(task, generation, "test_failure:auditor-reject", context=context)
+                self._controller.complete_task(run_id, task.task_id, generation, "blocked")
+                return WorkerRunResult(task.task_id, "blocked:auditor_reject")
             if self._execution_succeeded(auditor_result):
                 return self._handle_failure(
                     task, generation, "test_failure:malformed_structured_output", context=context,
                 )
             return self._handle_adapter_failure(task, generation, auditor_result, "auditor", context=context)
         finally:
-            self._release_writing_lease(writing_lease_owner)
-            with self._active_lock:
-                self._active_adapter = None
-                self._cancel_forwarded = False
-            cleanup()
+            try:
+                self._release_writing_lease(writing_lease_owner)
+            finally:
+                with self._active_lock:
+                    self._active_adapter = None
+                    self._cancel_forwarded = False
+                cleanup()
 
     def _complete_verified(self, run_id: str, task_id: str, generation: str) -> None:
         """Commit verified, then retry successor scheduling if the post-commit hook fails."""
@@ -421,37 +443,10 @@ class TaskWorker:
     ) -> WorkerRunResult:
         classification = result.error_classification or "process_failure"
         if role == "executor" and classification == "malformed_structured_output":
-            # Fail closed without generic retry_task/complete_task: 014 running-attempt
-            # mutation scope cannot durably terminalize these rows, and that path is
-            # the original defect. Durable exhaust/requeue is 015's job.
-            recover = getattr(self._controller, "recover_executor_contract_failure", None)
-            if not callable(recover):
-                return WorkerRunResult(task.task_id, "failed")
-            expected = getattr(task, "attempt", None)
-            if not isinstance(expected, int) or expected < 1:
-                return WorkerRunResult(task.task_id, "failed")
-            try:
-                payload = recover(
-                    task.run_id,
-                    task.task_id,
-                    generation,
-                    classification,
-                    expected_attempt=expected,
-                    max_retries=5,
-                )
-            except Exception:
-                LOGGER.exception(
-                    "executor-contract recovery failed for task=%s generation=%s",
-                    task.task_id,
-                    generation,
-                )
-                return WorkerRunResult(task.task_id, "failed")
-            reason = payload.get("reason") if isinstance(payload, dict) else None
-            if reason == "exhausted_retry_budget":
-                return WorkerRunResult(task.task_id, "failed")
-            if reason in {"recovered_contract_failure", "already_queued"}:
-                return WorkerRunResult(task.task_id, "retry_queued")
-            return WorkerRunResult(task.task_id, "failed")
+            # A malformed response does not establish whether external effects
+            # happened. Preserve the execution intent and require reconciliation.
+            self._controller.complete_task(task.run_id, task.task_id, generation, "blocked")
+            return WorkerRunResult(task.task_id, "blocked:executor_outcome_requires_review")
         reason = harness_failure_reason(role, classification, retryable=result.retryable)
         return self._handle_failure(task, generation, reason, context=context)
 
@@ -633,13 +628,6 @@ class TaskWorker:
     def _workstream_context(self, run_id: str, task_id: str) -> dict[str, Any]:
         from goal_dependencies import goal_spec_for_task
 
-        spec = goal_spec_for_task(self._artifact_root, run_id, task_id)
-        workstreams = spec.get("workstreams")
-        if not isinstance(workstreams, list):
-            raise WorkerConfigurationError("goal spec workstreams are required")
-        for workstream in workstreams:
-            if isinstance(workstream, dict) and workstream.get("task_id") == task_id:
-                return dict(workstream)
         handoff_root = self._artifact_root / "runs" / run_id / "handoffs"
         if handoff_root.is_dir():
             for request_path in sorted(handoff_root.glob("*/request.json")):
@@ -652,6 +640,11 @@ class TaskWorker:
                 handoff_id = request.get("handoff_id")
                 if not isinstance(handoff_id, str) or not handoff_id:
                     continue
+                from subworkflow_handoff import validate_request
+                contract = validate_request(request)
+                validate_durable = getattr(self._controller, "validate_handoff_request", None)
+                if callable(validate_durable):
+                    validate_durable(request)
                 return {
                     "task_id": task_id,
                     "title": request.get("objective", "capability-provider handoff"),
@@ -662,7 +655,7 @@ class TaskWorker:
                     "handoff_parent_task_id": request.get("parent_task_id"),
                     "handoff_request_path": str(request_path.relative_to(self._artifact_root)),
                     "acceptance_criteria": [{
-                        "disposition": "PASS_VM9201_DISPOSABLE_SEAM",
+                        "disposition": contract.success_disposition,
                         "product_contract": request.get("product_contract"),
                         "requirement": "write a validated handoff-product.json with role, capability, target, artifact, and rollback proof",
                     }],
@@ -676,6 +669,13 @@ class TaskWorker:
                         "Never emit credentials, private keys, full prompts, responses, or unrestricted commands."
                     ),
                 }
+        spec = goal_spec_for_task(self._artifact_root, run_id, task_id)
+        workstreams = spec.get("workstreams")
+        if not isinstance(workstreams, list):
+            raise WorkerConfigurationError("goal spec workstreams are required")
+        for workstream in workstreams:
+            if isinstance(workstream, dict) and workstream.get("task_id") == task_id:
+                return dict(workstream)
         raise WorkerConfigurationError("task workstream metadata is required")
 
     def _resolve_routing(self, context: dict[str, Any]) -> tuple[str, str]:
@@ -689,6 +689,10 @@ class TaskWorker:
             raise WorkerConfigurationError("executor and auditor must be distinct")
         if executor_id not in self._adapters or auditor_id not in self._adapters:
             raise WorkerConfigurationError("route adapter id is not registered")
+        from harness_adapters.identity import adapter_effective_identity, identities_conflict, identity_is_forbidden
+        identities = [adapter_effective_identity(self._adapters[key]) for key in (executor_id, auditor_id)]
+        if any(identity is None or identity_is_forbidden(identity) for identity in identities) or identities_conflict(*identities):
+            raise WorkerConfigurationError("executor and auditor require distinct complete effective identities")
         return executor_id, auditor_id
 
     @staticmethod
@@ -776,7 +780,8 @@ class TaskWorker:
                 if isinstance(context.get("executor_output_schema"), dict)
                 else EXECUTOR_RESULT_SCHEMA
             ),
-            metadata={"role": "executor", "adapter_id": adapter_id},
+            metadata={"role": "executor", "adapter_id": adapter_id,
+                      "acceptance_criteria": normalize_acceptance_criteria(context.get("acceptance_criteria", []))},
         )
 
     def _build_auditor_request(
@@ -784,9 +789,10 @@ class TaskWorker:
         context: dict[str, Any], executor_result: HarnessResult,
         executor_evidence: list[dict[str, str]],
     ) -> HarnessRequest:
-        acceptance = context.get("acceptance_criteria", [])
-        if not isinstance(acceptance, list):
-            raise WorkerConfigurationError("acceptance_criteria must be an array")
+        acceptance = normalize_acceptance_criteria(context.get("acceptance_criteria", []))
+        trusted = collect_trusted_evidence(artifact_root=self._artifact_root,
+            role_dir=role_dir.parent / "executor", executor_result=executor_result,
+            executor_evidence=executor_evidence, acceptance=acceptance)
         immutable = {
             "adapter_id": executor_result.adapter_id,
             "model": executor_result.model,
@@ -807,6 +813,7 @@ class TaskWorker:
             "AUDIT OBJECTIVE\n" + task.objective + "\n\nACCEPTANCE CRITERIA\n" +
             json.dumps(acceptance, sort_keys=True) + "\n\nEXECUTOR EVIDENCE\n" +
             json.dumps(immutable, sort_keys=True) +
+            "\n\nTRUSTED EVIDENCE\n" + json.dumps(trusted, sort_keys=True) +
             "\n\nReturn exactly one JSON object matching the verdict schema."
         )
         return self._base_request(
@@ -815,6 +822,7 @@ class TaskWorker:
             metadata={
                 "role": "auditor", "adapter_id": adapter_id,
                 "acceptance_criteria": acceptance, "executor_evidence": immutable,
+                "trusted_evidence": trusted,
             },
         )
 
@@ -877,6 +885,7 @@ class WorkerLoop:
         self, worker: TaskWorker, *, run_id: str | None, owner: str,
         poll_interval: float = 5.0, once: bool = False,
         expected_task_id: str | None = None,
+        health=None,
     ) -> None:
         if expected_task_id is not None and (not once or not run_id):
             raise ValueError("expected task requires one-shot mode and an explicit parent")
@@ -889,6 +898,8 @@ class WorkerLoop:
         self._stop = False
         self._permission_error_seen = False
         self._permission_error_last_log: dict[str, float] = {}
+        self.health = health
+        self.last_status = "idle"
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
 
@@ -914,7 +925,17 @@ class WorkerLoop:
         self._worker.cancel_active()
 
     def run(self) -> bool:
+        scope = self._run_id or "available"
         while not self._stop:
+            if self.health is not None:
+                state = self.health.state(scope)
+                if state["blocked"]:
+                    self.last_status = "blocked:" + state["reason"]
+                    return False
+                delay = state["retry_at"] - time.time()
+                if delay > 0:
+                    time.sleep(min(delay, 30))
+                    continue
             try:
                 if self._run_id:
                     options = ({"expected_task_id": self._expected_task_id}
@@ -925,12 +946,23 @@ class WorkerLoop:
             except PermissionError as exc:
                 self._permission_error_seen = True
                 self._log_permission_error(exc)
-                if self._once:
+                self.last_status = "blocked:permission_or_ownership"
+                if self.health is not None:
+                    self.health.fail(scope, reason="permission_or_ownership", permanent=True)
+                return False
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                self.last_status = "blocked:database_unavailable"
+                if self.health is None:
                     return False
-                time.sleep(self._poll_interval)
+                state = self.health.fail(scope, reason="database_unavailable", permanent=False)
+                if state["blocked"] or self._once:
+                    return False
                 continue
+            if self.health is not None:
+                self.health.success(scope)
+            self.last_status = result.terminal_state if result is not None else "idle"
             if self._once:
-                return True
+                return result is None or result.terminal_state in {"verified", "handoff_completed"}
             if result is None and not self._stop:
                 time.sleep(self._poll_interval)
         return not self._permission_error_seen

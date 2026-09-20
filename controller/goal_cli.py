@@ -154,13 +154,18 @@ def main(argv: list[str] | None = None) -> int:
                 from harness_adapters.registry import load_registry_config
                 from goal_submitter import TaskRoutingSnapshot
 
-                routes = load_registry_config(
+                config = load_registry_config(
                     Path(args.adapter_config), validate_executables=False
-                )["routes"]
+                )
+                routes = config["routes"]
+                from harness_adapters.registry import validate_task_routes
+                validate_task_routes(config, routes["default_executor"], routes["default_auditor"])
                 task_routing = TaskRoutingSnapshot(
                     executor_adapter=routes["default_executor"],
                     auditor_adapter=routes["default_auditor"],
                 )
+            elif not args.dry_run:
+                raise ValueError("durable submission requires --adapter-config with independent executable routes")
             receipt = GoalSubmitter(
                 controller, artifact_root, mode=mode, task_routing=task_routing
             ).submit(prompt_path, existing_parent=args.existing_parent)

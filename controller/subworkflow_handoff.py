@@ -36,6 +36,10 @@ class ProviderContract:
     max_attempts: int = 5
 
     @property
+    def success_disposition(self) -> str:
+        return self.failure_code.replace("BLOCKED_", "PASS_", 1).replace("_MISSING", "_DELIVERED")
+
+    @property
     def allowed_mutations_digest(self) -> str:
         return digest_value(self.allowed_mutations)
 
@@ -193,6 +197,7 @@ def build_handoff_request(
         "evidence_root": evidence_root,
         "timeout_seconds": contract.timeout_seconds,
         "max_attempts": contract.max_attempts,
+        "required_disposition": contract.success_disposition,
         "provider_task_id": provider_task_id,
         "request_digest": request_digest,
         "status": "created",
@@ -201,9 +206,32 @@ def build_handoff_request(
     return request
 
 
+def validate_request(request: Mapping[str, Any]) -> ProviderContract:
+    contract = provider_for_failure(str(request.get("failure_code", "")))
+    if contract is None:
+        raise HandoffValidationError("no_registered_subworkflow")
+    expected = build_handoff_request(
+        run_id=request.get("run_id"), parent_task_id=request.get("parent_task_id"),
+        parent_attempt_id=request.get("parent_attempt_id"), failure_code=contract.failure_code,
+        request_artifact_root=request.get("evidence_root"),
+        handoff_context=request.get("handoff_context"),
+    )
+    if set(request) != set(expected):
+        raise HandoffValidationError("request_keys_invalid")
+    # status is a mutable projection; all authority-bearing fields are immutable.
+    for key, value in expected.items():
+        if key != "status" and request.get(key) != value:
+            raise HandoffValidationError("request_contract_or_digest_mismatch")
+    return contract
+
+
 def _validate_target_identity(value: Any, contract: ProviderContract) -> dict[str, str]:
     if not isinstance(value, Mapping):
         raise HandoffValidationError("target_identity_missing")
+    if contract == HORIZON_PREREQ_CONTRACT:
+        if value != {"repository": "GinterVonHelsig/horizon", "scope": "isolated-worktree"}:
+            raise HandoffValidationError("target_identity_mismatch")
+        return dict(value)
     expected = {"vmid": "9201", "endpoint": "192.168.0.96:5432"}
     for key, expected_value in expected.items():
         if value.get(key) != expected_value:
@@ -215,6 +243,10 @@ def _validate_target_identity(value: Any, contract: ProviderContract) -> dict[st
 
 
 def validate_product(product_path: Path, request: Mapping[str, Any], artifact_root: Path) -> dict[str, Any]:
+    from submission_bundle import _read_bytes
+    contract = validate_request(request)
+    if any(part.is_symlink() for part in (product_path, *product_path.parents)):
+        raise HandoffValidationError("product_path_invalid")
     product_path = product_path.resolve()
     artifact_root = artifact_root.resolve()
     if not product_path.is_file() or product_path.is_symlink() or not product_path.is_relative_to(artifact_root):
@@ -222,7 +254,8 @@ def validate_product(product_path: Path, request: Mapping[str, Any], artifact_ro
     if product_path.stat().st_size > 256 * 1024:
         raise HandoffValidationError("product_too_large")
     try:
-        product = json.loads(product_path.read_text(encoding="utf-8"))
+        product_bytes = _read_bytes(product_path)
+        product = json.loads(product_bytes)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HandoffValidationError("product_json_invalid") from exc
     if not isinstance(product, dict):
@@ -248,23 +281,47 @@ def validate_product(product_path: Path, request: Mapping[str, Any], artifact_ro
         raise HandoffValidationError("parent_binding_mismatch")
     provider_run_id = _validate_id(product.get("provider_run_id"), "provider_run_id")
     disposition = product.get("disposition")
-    if disposition != "PASS_VM9201_DISPOSABLE_SEAM":
+    if disposition != contract.success_disposition:
         raise HandoffValidationError("product_disposition_invalid")
+    if product.get("status") != "completed" or product.get("bounded_error") is not None:
+        raise HandoffValidationError("product_not_completed")
+    provenance = product.get("provenance")
+    if not isinstance(provenance, Mapping):
+        raise HandoffValidationError("provenance_missing")
+    _validate_hex(provenance.get("source_sha256"), "source_sha256")
+    if contract == HORIZON_PREREQ_CONTRACT:
+        if provenance.get("request_digest") != request["request_digest"]:
+            raise HandoffValidationError("provenance_request_mismatch")
+        if provenance.get("allowed_mutations_digest") != contract.allowed_mutations_digest or provenance.get("forbidden_mutations_digest") != contract.forbidden_mutations_digest:
+            raise HandoffValidationError("provenance_scope_mismatch")
     target_identity = _validate_target_identity(product.get("target_identity"), contract)
     capability = product.get("capability")
-    if not isinstance(capability, Mapping) or capability.get("role_authenticated") is not True or capability.get("disposable_harness_readable") is not True:
+    if not isinstance(capability, Mapping):
         raise HandoffValidationError("capability_proof_missing")
-    namespace = capability.get("database_namespace")
-    if not isinstance(namespace, str) or not (namespace.startswith("td_test_") or namespace.startswith("td_downgrade_")):
-        raise HandoffValidationError("capability_namespace_invalid")
+    if contract == HORIZON_PREREQ_CONTRACT:
+        if set(capability) != {"prerequisite_id", "implementation_verified", "disposable_tests_passed", "capability_sha256"} or capability.get("implementation_verified") is not True or capability.get("disposable_tests_passed") is not True:
+            raise HandoffValidationError("capability_proof_missing")
+        _validate_id(capability.get("prerequisite_id"), "prerequisite_id")
+        expected_id = request.get("handoff_context", {}).get("prerequisite_node_id")
+        if expected_id is None or capability["prerequisite_id"] != expected_id:
+            raise HandoffValidationError("prerequisite_binding_mismatch")
+    else:
+        if capability.get("role_authenticated") is not True or capability.get("disposable_harness_readable") is not True:
+            raise HandoffValidationError("capability_proof_missing")
+        namespace = capability.get("database_namespace")
+        if not isinstance(namespace, str) or not (namespace.startswith("td_test_") or namespace.startswith("td_downgrade_")):
+            raise HandoffValidationError("capability_namespace_invalid")
+        if not isinstance(capability.get("credential_ref"), str) or not SAFE_ID.fullmatch(capability["credential_ref"]):
+            raise HandoffValidationError("credential_ref_invalid")
     _validate_hex(capability.get("capability_sha256"), "capability_sha256")
-    if not isinstance(capability.get("credential_ref"), str) or not SAFE_ID.fullmatch(capability["credential_ref"]):
-        raise HandoffValidationError("credential_ref_invalid")
     rollback = product.get("rollback")
     if not isinstance(rollback, Mapping) or rollback.get("status") != "available":
         raise HandoffValidationError("rollback_proof_missing")
     rollback_path = _validate_relative_path(rollback.get("artifact_path"), "rollback_artifact_path")
-    rollback_file = (product_path.parent / rollback_path).resolve()
+    unresolved_rollback = product_path.parent / rollback_path
+    if any(part.is_symlink() for part in (unresolved_rollback, *unresolved_rollback.parents)):
+        raise HandoffValidationError("rollback_artifact_symlink")
+    rollback_file = unresolved_rollback.resolve()
     if not rollback_file.is_file() or rollback_file.is_symlink() or not rollback_file.is_relative_to(artifact_root):
         raise HandoffValidationError("rollback_artifact_missing")
     artifacts = product.get("artifacts")
@@ -279,28 +336,32 @@ def validate_product(product_path: Path, request: Mapping[str, Any], artifact_ro
         artifact_bytes = artifact.get("bytes")
         if type(artifact_bytes) is not int or artifact_bytes < 0:
             raise HandoffValidationError("artifact_bytes_invalid")
-        artifact_file = (product_path.parent / artifact_path).resolve()
+        unresolved = product_path.parent / artifact_path
+        if any(part.is_symlink() for part in (unresolved, *unresolved.parents)):
+            raise HandoffValidationError("artifact_symlink")
+        artifact_file = unresolved.resolve()
         if not artifact_file.is_file() or artifact_file.is_symlink() or not artifact_file.is_relative_to(artifact_root):
             raise HandoffValidationError("artifact_missing")
         if artifact_file.stat().st_size != artifact_bytes:
             raise HandoffValidationError("artifact_size_mismatch")
-        if hashlib.sha256(artifact_file.read_bytes()).hexdigest() != artifact_sha256:
+        if hashlib.sha256(_read_bytes(artifact_file)).hexdigest() != artifact_sha256:
             raise HandoffValidationError("artifact_digest_mismatch")
         validated_artifacts.append({"path": artifact_path, "sha256": artifact_sha256, "bytes": artifact_bytes})
+    if contract == HORIZON_PREREQ_CONTRACT:
+        digests = {entry["sha256"] for entry in validated_artifacts}
+        if capability["capability_sha256"] not in digests or provenance["source_sha256"] not in digests:
+            raise HandoffValidationError("provenance_artifact_missing")
+        if rollback_path not in {entry["path"] for entry in validated_artifacts}:
+            raise HandoffValidationError("rollback_digest_missing")
     return {
         "provider_run_id": provider_run_id,
         "disposition": disposition,
         "target_identity": target_identity,
-        "capability": {
-            "role_authenticated": True,
-            "disposable_harness_readable": True,
-            "database_namespace": namespace,
-            "credential_ref": capability["credential_ref"],
-            "capability_sha256": capability["capability_sha256"],
-        },
+        "capability": dict(capability),
         "rollback_artifact_path": rollback_path,
         "artifacts": validated_artifacts,
-        "product_sha256": hashlib.sha256(product_path.read_bytes()).hexdigest(),
+        "product_sha256": hashlib.sha256(product_bytes).hexdigest(),
+        "validated_product": product,
     }
 
 

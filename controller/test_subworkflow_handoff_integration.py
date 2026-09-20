@@ -11,6 +11,7 @@ import pytest
 from parent_controller import ParentController
 from repository import PostgresRepository
 from subworkflow_handoff import build_handoff_request, validate_product
+from test_only.recovery_fakes import route_config
 
 RUN_ID = "goal-3eb7b972ec15809e"
 PARENT_TASK_ID = "goal-3eb7b972ec15809e-ws-04"
@@ -23,6 +24,7 @@ def controller(db_url: str, artifact_root: Path) -> ParentController:
         db_url,
         controller_owner="ats-del-002-test",
         artifact_root=artifact_root,
+        adapter_config=route_config("cursor-cli", "openrouter-claude-auditor"),
     )
     try:
         yield parent
