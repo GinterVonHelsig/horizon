@@ -7,10 +7,23 @@ test -n "${HORIZON_PROVIDER_CURSOR_EXECUTABLE:-}"
 if [[ ${1:-} != --capture && ${1:-} != --inside ]]; then
   exec unshare --mount --pid --cgroup --fork --mount-proc bash "$0" --capture
 fi
+if [[ ${HORIZON_PROVIDER_CATALOG_ONLY:-} == 1 && $1 == --inside ]]; then
+  "$HORIZON_PROVIDER_CURSOR_EXECUTABLE" --list-models
+  exit
+fi
 if [[ $1 == --capture ]]; then
   mount --make-rprivate /
+  # Ubuntu's resolv.conf points into /run; retain only that public resolver
+  # configuration, not host runtime sockets, trust files or database state.
+  exec 9</etc/resolv.conf
   mount -t tmpfs tmpfs /tmp
   mount -t tmpfs tmpfs /run
+  mkdir -p /run/systemd/resolve
+  install -m 644 /dev/null /run/systemd/resolve/stub-resolv.conf
+  # Do not canonicalize the fd back to its now-shadowed pathname.
+  mount --no-canonicalize --bind /proc/self/fd/9 /run/systemd/resolve/stub-resolv.conf
+  mount -o remount,bind,ro /run/systemd/resolve/stub-resolv.conf
+  exec 9<&-
   test -d /etc/top-delivery
   mount -t tmpfs -o mode=0755 tmpfs /etc/top-delivery
   install -m 600 /dev/null /run/horizon-cursor-host-network
