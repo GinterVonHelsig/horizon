@@ -13,8 +13,12 @@ inventory. The shared Horizon selector is authoritative. One transport call,
 no retry/fallback execution, no smoke bypass. Legacy model/phase identifiers
 are not silently mapped from OpenRouter to Cursor. Missing authorized independent
 routes fail; supported additional routes require explicit policy configuration.
-The old transport functions remain for provenance/compatibility comparison, but
-this entry point's admission permits only Cursor and does not call them.
+The source-owned entry point contains only the Cursor transport. Non-Cursor
+transports and their credential loader were removed after review: the inherited
+composite constructor eagerly loaded an OpenRouter key even for a Cursor route.
+The unchanged installed source and Git history preserve comparison provenance.
+Observed stream-init identity is retained in result/history, not replaced with
+the requested alias. The --user-file bytes must match the bound subject digest.
 
 Future deployment: package this exact reviewed module and controller dependencies,
 add an explicitly Cursor-named command and compatibility shim that forwards the

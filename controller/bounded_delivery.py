@@ -42,9 +42,9 @@ def validate_spec(spec):
     return spec
 
 
-def acceptance_for_spec(spec, digest):
+def acceptance_for_spec(profile, digest):
     return [
-        ("Bounded source recipe tests verified for specification " if spec==SOURCE_TEST_PROFILE else "Exact disposable file content verified for specification ")+digest,
+        ("Bounded source recipe tests verified for specification " if profile==SOURCE_TEST_PROFILE else "Exact disposable file content verified for specification ")+digest,
         "Disposable workspace contains only the authorized deliverable",
     ]
 

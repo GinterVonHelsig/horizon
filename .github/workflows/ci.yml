@@ -67,6 +67,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql postgresql-contrib iproute2
           sudo install -d -m 755 /etc/top-delivery
+          sudo install -d -m 755 /var/lib/top-delivery-submission-bundles
       - name: Exercise real persistence with simulated model execution
         run: |
           # Migration sources are trust anchors and must be root-owned. Keep

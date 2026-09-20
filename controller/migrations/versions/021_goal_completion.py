@@ -104,6 +104,9 @@ def upgrade():
         IF NOT EXISTS(SELECT 1 FROM evidence_index x JOIN task_attempts a USING(attempt_id)
           WHERE x.run_id=r AND x.task_id=node->>'task_id' AND a.status='verified' AND x.result='pass'
           AND x.producer='auditor') THEN RAISE EXCEPTION 'missing verified audit evidence'; END IF;
+        IF NOT EXISTS(SELECT 1 FROM evidence_index x JOIN task_attempts a USING(attempt_id)
+          WHERE x.run_id=r AND x.task_id=node->>'task_id' AND a.status='verified' AND x.result='pass'
+          AND x.producer='executor') THEN RAISE EXCEPTION 'missing verified executor evidence'; END IF;
       END LOOP;
       IF EXISTS(SELECT 1 FROM subworkflow_handoffs h WHERE h.run_id=r AND h.state<>'completed'
         AND h.parent_task_id IN (SELECT value->>'task_id' FROM jsonb_array_elements(graph.spec->'workstreams')))

@@ -6,11 +6,7 @@ import argparse
 import json
 import os
 import re
-import ssl
 import subprocess
-import tempfile
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -197,9 +193,8 @@ def is_luna_model(model: str) -> bool:
 def returned_model_ok(requested: str, returned: str | None) -> bool:
     if not returned:
         return False
-    if returned == requested or returned.startswith(requested + ":") or requested in returned:
-        return True
-    return normalize_model_id(returned) == normalize_model_id(requested)
+    from harness_adapters.identity import canonical_model
+    return canonical_model(returned.lower().replace(" ","-")) == canonical_model(requested.lower().replace(" ","-"))
 
 
 def account_tokens(completion_tokens: int | None, hop_tokens: int) -> int:
@@ -552,6 +547,7 @@ def run_seat(
                 "index": index,
                 "provider": hop.provider,
                 "model": hop.model,
+                "model_returned": result.model_returned,
                 "effort": hop.effort,
                 "attempt": attempt + 1,
                 "kind": kind,
@@ -570,13 +566,13 @@ def run_seat(
             hops.append(hop_record)
             if kind == "terminal":
                 import hashlib
-                normalized={"status":"success","exit_code":0,"provider":hop.provider,"model":hop.model,
-                    "structured_payload":json.loads(result.content),"generation_id":result.generation_id}
+                normalized={"status":"success","exit_code":0,"provider":hop.provider,"model":result.model_returned,
+                    "structured_payload":parse_review_content(result.content).payload,"generation_id":result.generation_id}
                 result_bytes=canonical_json(normalized)
                 result_path=Path("review-results")/(digest_value(intent)+".json")
                 write_once(artifact_root/result_path,result_bytes)
                 history={"run_id":run_id,"subject_sha256":review_context["subject"]["sha256"],
-                    "route":selected.to_dict(),"result":{"path":str(result_path),"sha256":hashlib.sha256(result_bytes).hexdigest()}}
+                    "route":replace(selected,model=result.model_returned.lower().replace(" ","-")).to_dict(),"result":{"path":str(result_path),"sha256":hashlib.sha256(result_bytes).hexdigest()}}
                 write_once(artifact_root/"review-history"/(digest_value(intent)+".json"),canonical_json(history))
                 feedback = parse_review_feedback(result.content)
                 return SeatResult(
@@ -585,7 +581,7 @@ def run_seat(
                     hops=hops,
                     fallback_reason=None if index == 0 and attempt == 0 else "retried-or-hopped",
                     tokens_used=tokens_used,
-                    model=hop.model,
+                    model=result.model_returned,
                     provider=hop.provider,
                     suggestions=feedback["suggestions"],
                     finding_summaries=feedback["finding_summaries"],
@@ -620,43 +616,6 @@ def run_seat(
     )
 
 
-def smoke_model(
-    *,
-    model: str,
-    effort: str,
-    transport: Transport,
-    artifact_root: Path,
-    run_id: str = "smoke",
-    provider: str = "openrouter",
-) -> SeatResult:
-    deny_model(model)
-    routing = {
-        "phases": {
-            "smoke": {
-                "provider": provider,
-                "model": model,
-                "effort": effort,
-                "fallbacks": [],
-            }
-        }
-    }
-    return run_seat(
-        seat="smoke",
-        routing=routing,
-        artifact_root=artifact_root,
-        run_id=run_id,
-        transport=transport,
-    )
-
-
-def _load_key() -> str:
-    env_file = Path("/etc/top-delivery/operator-harness.env")
-    for line in env_file.read_text().splitlines():
-        if line.startswith("OPENROUTER_API_KEY="):
-            value = line.split("=", 1)[1].strip().strip("'").strip('"')
-            if value:
-                return value
-    raise ReviewPolicyError("OPENROUTER_API_KEY missing")
 
 
 def _transport_error_result(exc: BaseException, started: datetime) -> TransportResult:
@@ -673,102 +632,6 @@ def _transport_error_result(exc: BaseException, started: datetime) -> TransportR
     )
 
 
-def live_transport(
-    system: str,
-    user: str,
-    timeout: float = READ_TIMEOUT_SECONDS,
-) -> Transport:
-    key = _load_key()
-    ctx = ssl.create_default_context()
-    system_text = f"{system.strip()}\n\n{SCHEMA_CONTRACT}"
-
-    def _post(body: Mapping[str, Any]) -> tuple[TransportResult, Mapping[str, Any] | None]:
-        started = datetime.now(timezone.utc)
-        req = urllib.request.Request(
-            OPENROUTER_URL,
-            data=json.dumps(body).encode(),
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://top-delivery.local",
-                "X-Title": "host-openrouter-review",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-                raw = resp.read()
-                payload = json.loads(raw.decode())
-                http_status = getattr(resp, "status", 200)
-        except urllib.error.HTTPError as exc:
-            err = _transport_error_result(exc, started)
-            return replace(err, http_status=exc.code), None
-        except (urllib.error.URLError, TimeoutError, ConnectionResetError, BrokenPipeError, ssl.SSLError) as exc:
-            return _transport_error_result(exc, started), None
-        choice = (payload.get("choices") or [{}])[0]
-        message = choice.get("message") if isinstance(choice, dict) else {}
-        if not isinstance(message, dict):
-            message = {}
-        usage = payload.get("usage") or {}
-        details = usage.get("completion_tokens_details") if isinstance(usage, dict) else None
-        reasoning_tokens = None
-        if isinstance(details, dict):
-            reasoning_tokens = details.get("reasoning_tokens")
-        result = TransportResult(
-            http_status=http_status,
-            model_returned=payload.get("model"),
-            content=review_text_from_message(message),
-            finish_reason=choice.get("finish_reason"),
-            completion_tokens=usage.get("completion_tokens") if isinstance(usage, dict) else None,
-            first_byte_seconds=0.0,
-            ttft_measured=False,
-            generation_id=payload.get("id") if isinstance(payload.get("id"), str) else None,
-            provider=payload.get("provider") if isinstance(payload.get("provider"), str) else "openrouter",
-            reasoning_tokens=reasoning_tokens if isinstance(reasoning_tokens, int) else None,
-        )
-        return result, message
-
-    def _call(provider: str, model: str, effort: str, max_tokens: int) -> TransportResult:
-        if provider != "openrouter":
-            raise ReviewPolicyError(f"live_transport cannot serve provider {provider}")
-        deny_model(model)
-        body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_text},
-                {"role": "user", "content": user},
-            ],
-            "reasoning": {"effort": effort},
-            "provider": {"allow_fallbacks": False},
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "adversarial_review",
-                    "strict": True,
-                    "schema": REVIEW_JSON_SCHEMA,
-                },
-            },
-            "max_tokens": max_tokens,
-        }
-        result, message = _post(body)
-        nxt = continuation_chat_body(body, message)
-        if nxt is None:
-            return result
-        continued, _ignored = _post(nxt)
-        first_cost = account_tokens(result.completion_tokens, max_tokens)
-        second_cost = account_tokens(continued.completion_tokens, max_tokens)
-        continued.completion_tokens = first_cost + second_cost
-        if result.generation_id and continued.generation_id:
-            continued.generation_id = f"{result.generation_id}+{continued.generation_id}"
-        elif result.generation_id and not continued.generation_id:
-            continued.generation_id = result.generation_id
-        if result.reasoning_tokens is not None or continued.reasoning_tokens is not None:
-            continued.reasoning_tokens = (result.reasoning_tokens or 0) + (
-                continued.reasoning_tokens or 0
-            )
-        return continued
-
-    return _call
 
 
 def parse_cursor_envelope(stdout: str) -> tuple[TransportResult, dict[str, Any] | None]:
@@ -897,7 +760,7 @@ def cursor_transport(
             if canonical_model(actual)!=canonical_model(model):
                 raise ValueError("harness model mismatch")
             result, _envelope = parse_cursor_envelope(json.dumps(ends[0]))
-            return replace(result, model_returned=model, first_byte_seconds=elapsed)
+            return replace(result, model_returned=init[0]["model"], first_byte_seconds=elapsed)
         except (ValueError,TypeError):
             return TransportResult(http_status=0,model_returned=None,content="",finish_reason=None,
                 completion_tokens=None,error="CursorAttributionMismatch",provider="cursor")
@@ -905,189 +768,9 @@ def cursor_transport(
     return _call
 
 
-def parse_codex_last_message(text: str) -> str:
-    extracted = _json_object_with_verdict(text)
-    if extracted:
-        return extracted
-    return text.strip()
-
-
-def openai_transport(
-    system: str,
-    user: str,
-    timeout: float = TOTAL_ATTEMPT_TIMEOUT_SECONDS,
-) -> Transport:
-    """Serve OpenAI-plan models through Codex exec (ChatGPT auth, not OpenRouter)."""
-    system_text = f"{system.strip()}\n\n{SCHEMA_CONTRACT}"
-
-    def _call(provider: str, model: str, effort: str, max_tokens: int) -> TransportResult:
-        if provider != "openai":
-            raise ReviewPolicyError(f"openai_transport cannot serve provider {provider}")
-        deny_model(model)
-        slug = normalize_model_id(model)
-        prompt = (
-            f"{system_text}\n\n---\n\nReview packet:\n{user}\n\n"
-            "Respond with only the JSON review object matching the schema. "
-            f"effort={effort} max_tokens={max_tokens}"
-        )
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as handle:
-            out_path = handle.name
-        cmd = [
-            CODEX_BIN,
-            "--yolo",
-            "exec",
-            "--skip-git-repo-check",
-            "-c",
-            'approval_policy="never"',
-            "-c",
-            "model_provider=openai",
-            "-c",
-            f"model_reasoning_effort={json.dumps(effort)}",
-            "-m",
-            slug,
-            "-o",
-            out_path,
-            "-",
-        ]
-        env = {**os.environ, "CODEX_HOME": CODEX_HOME}
-        started = datetime.now(timezone.utc)
-        try:
-            proc = subprocess.run(
-                cmd,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd="/opt/operator-harness",
-                env=env,
-            )
-        except subprocess.TimeoutExpired as exc:
-            Path(out_path).unlink(missing_ok=True)
-            return replace(_transport_error_result(exc, started), provider="openai")
-        elapsed = (datetime.now(timezone.utc) - started).total_seconds()
-        combined = f"{proc.stdout or ''}\n{proc.stderr or ''}"
-        try:
-            message = Path(out_path).read_text()
-        except OSError:
-            message = ""
-        finally:
-            Path(out_path).unlink(missing_ok=True)
-        if "usage limit" in combined.lower():
-            return TransportResult(
-                http_status=429,
-                model_returned=model,
-                content=combined[:4000],
-                finish_reason=None,
-                completion_tokens=None,
-                first_byte_seconds=elapsed,
-                ttft_measured=False,
-                error="CodexUsageLimit",
-                provider="openai",
-            )
-        if proc.returncode != 0:
-            return TransportResult(
-                http_status=proc.returncode,
-                model_returned=model,
-                content=(message or combined)[:4000],
-                finish_reason=None,
-                completion_tokens=None,
-                first_byte_seconds=elapsed,
-                ttft_measured=False,
-                error=f"CodexExit{proc.returncode}",
-                provider="openai",
-            )
-        content = parse_codex_last_message(message or combined)
-        return TransportResult(
-            http_status=200,
-            model_returned=model,
-            content=content,
-            finish_reason="stop" if content else None,
-            completion_tokens=None,
-            first_byte_seconds=elapsed,
-            ttft_measured=False,
-            provider="openai",
-        )
-
-    return _call
-
-
 def composite_transport(system: str, user: str) -> Transport:
-    openrouter = live_transport(system, user)
-    cursor = cursor_transport(system, user)
-    openai = openai_transport(system, user)
-
-    def antigravity(provider: str, model: str, effort: str, max_tokens: int) -> TransportResult:
-        """Run the local Antigravity CLI through the host CPU compatibility shim."""
-        started = datetime.now(timezone.utc)
-        prompt = f"{system}\n\n{user}"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as handle:
-            handle.write(prompt)
-            prompt_path = handle.name
-        short_prompt = (
-            f"Read the adversarial review packet at {prompt_path}. "
-            "Respond with only the JSON review object matching the required schema."
-        )
-        cmd = [
-            "qemu-x86_64", "-cpu", "Haswell", "/opt/operator-harness/bin/agy",
-            "--dangerously-skip-permissions", "--model", model,
-            "--effort", effort, "--print-timeout", "900s", "-p", short_prompt,
-        ]
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900, cwd="/tmp")
-        except OSError as exc:
-            Path(prompt_path).unlink(missing_ok=True)
-            if getattr(exc, "errno", None) == 7:
-                return TransportResult(
-                    http_status=0,
-                    model_returned=model,
-                    content=str(exc),
-                    finish_reason=None,
-                    completion_tokens=None,
-                    first_byte_seconds=(datetime.now(timezone.utc) - started).total_seconds(),
-                    ttft_measured=False,
-                    error="ArgumentListTooLong",
-                    provider="antigravity",
-                )
-            raise
-        except subprocess.TimeoutExpired as exc:
-            Path(prompt_path).unlink(missing_ok=True)
-            return replace(_transport_error_result(exc, started), provider="antigravity")
-        Path(prompt_path).unlink(missing_ok=True)
-        elapsed = (datetime.now(timezone.utc) - started).total_seconds()
-        if proc.returncode != 0:
-            return TransportResult(
-                http_status=proc.returncode,
-                model_returned=model,
-                content=(proc.stderr or proc.stdout or "")[:4000],
-                finish_reason=None,
-                completion_tokens=None,
-                first_byte_seconds=elapsed,
-                ttft_measured=False,
-                error=f"AntigravityExit{proc.returncode}",
-                provider="antigravity",
-            )
-        return TransportResult(
-            http_status=200,
-            model_returned=model,
-            content=proc.stdout,
-            finish_reason="stop",
-            completion_tokens=None,
-            first_byte_seconds=elapsed,
-            ttft_measured=False,
-            error=None,
-            provider="antigravity",
-        )
-
-    def _call(provider: str, model: str, effort: str, max_tokens: int) -> TransportResult:
-        if provider == "cursor":
-            return cursor(provider, model, effort, max_tokens)
-        if provider == "antigravity":
-            return antigravity(provider, model, effort, max_tokens)
-        if provider == "openai":
-            return openai(provider, model, effort, max_tokens)
-        return openrouter(provider, model, effort, max_tokens)
-
-    return _call
+    """Only the explicitly authorized subscription transport is executable."""
+    return cursor_transport(system, user)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1116,21 +799,6 @@ def main(argv: list[str] | None = None) -> int:
         raise ReviewPolicyError("review-attempt must be between 0 and 5")
     if args.smoke_model:
         raise ReviewPolicyError("unbound smoke execution is disabled in the source-owned review entry point")
-        system = SCHEMA_CONTRACT
-        user = '{"verdict":"approve","findings":[]}'
-        if args.system_file:
-            system = args.system_file.read_text()
-        if args.user_file:
-            user = args.user_file.read_text()
-        transport = composite_transport(system, user)
-        result = smoke_model(
-            model=args.smoke_model,
-            effort=args.effort,
-            transport=transport,
-            artifact_root=args.artifact_root,
-            run_id=args.run_id,
-            provider=args.smoke_provider,
-        )
     else:
         if not args.seat or not args.routing_yaml:
             raise SystemExit("seat reviews require --seat and --routing-yaml")
@@ -1152,9 +820,16 @@ def main(argv: list[str] | None = None) -> int:
                 raise SystemExit(
                     f"ordered review gate blocked seat 1.6: seat 1.5 verdict={prior_verdict or 'missing'}"
                 )
+        if not args.review_context:
+            raise ReviewPolicyError("bound review context required")
+        context=json.loads(args.review_context.read_text())
+        import hashlib
+        packet=args.user_file.read_bytes()
+        if hashlib.sha256(packet).hexdigest()!=context.get("subject",{}).get("sha256"):
+            raise ReviewPolicyError("review packet differs from bound subject")
         transport = composite_transport(
             args.system_file.read_text(),
-            args.user_file.read_text(),
+            packet.decode("utf-8"),
         )
         result = run_seat(
             seat=args.seat,
@@ -1163,7 +838,7 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             transport=transport,
             configured_max_tokens=configured_max,
-            review_context=json.loads(args.review_context.read_text()) if args.review_context else None,
+            review_context=context,
         )
     payload = {
         "status": result.status,

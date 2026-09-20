@@ -31,9 +31,12 @@ def validate_graph(spec):
 
 def bind_graph(controller, run_id, spec):
     validate_graph(spec)
-    with controller._repo.transaction() as cur:
-        cur.execute("SELECT horizon_bind_graph(%s,%s,%s::jsonb,%s)",
-                    (run_id, spec["run_id"], json.dumps(spec), digest_value(spec)))
+    with controller._goal_state_store.lock(run_id):
+        if controller._goal_state_store.is_paused(run_id):
+            raise ValueError("paused run cannot accept a graph binding")
+        with controller._repo.transaction() as cur:
+            cur.execute("SELECT horizon_bind_graph(%s,%s,%s::jsonb,%s)",
+                        (run_id, spec["run_id"], json.dumps(spec), digest_value(spec)))
 
 
 def graphs(controller, run_id):

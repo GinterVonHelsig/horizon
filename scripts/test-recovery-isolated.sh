@@ -11,6 +11,8 @@ mount -t tmpfs tmpfs /run
 # Existing mount point required; never copy host credentials into the sandbox.
 test -d /etc/top-delivery
 mount -t tmpfs -o mode=0755 tmpfs /etc/top-delivery
+test -d /var/lib/top-delivery-submission-bundles
+mount -t tmpfs -o mode=0755 tmpfs /var/lib/top-delivery-submission-bundles
 install -m 600 tests/fixtures/recovery-attestation.json /etc/top-delivery/comms01-attestation.json
 mkdir -p /run/postgresql /run/top-delivery
 chown postgres:postgres /run/postgresql

@@ -95,7 +95,14 @@ def test_missing_successor_reconciles_after_commit_crash(chain, monkeypatch):
 
 def test_concurrent_finalizers_and_stale_epoch(chain, db_url):
     from concurrent.futures import ThreadPoolExecutor
-    parent,worker,run=finish(chain)
+    parent,worker,receipt,*_=chain
+    run=receipt.run_id
+    for _ in range(3): worker.run_once(run,"progress")
+    task=parent.claim_next(run,"last-before-finalizers")
+    assert worker._run_claimed_task(task,"last-before-finalizers").terminal_state=="verified"
+    with parent._repo.transaction() as cur:
+        cur.execute("SELECT outcome FROM horizon_goal_graphs WHERE run_id=%s",(run,))
+        assert cur.fetchone()["outcome"] is None
     def finalize(_):
         other=ParentController(db_url,artifact_root=parent.artifact_root,lease_holder=False)
         try: return other.reconcile_goal_graph(run)
@@ -208,6 +215,59 @@ def test_tampered_completed_evidence_is_not_cli_success(chain,artifact_root):
     parent,worker,run=finish(chain)
     next(artifact_root.glob("runs/*/attempts/*/auditor/stdout.txt")).write_text("changed")
     assert parent.durable_goal_status(run)["exit_code"]==78
+
+
+def test_child_graph_completion_is_not_whole_parent(chain,monkeypatch):
+    parent,worker,receipt,writer,author,submitter,prompt=chain
+    monkeypatch.setenv("TOP_DELIVERY_REQUIRE_TRUSTED_SUBMISSIONS","1")
+    unrelated="goal-1111222233334444"
+    parent.register_run(unrelated)
+    prompt.write_text(prompt.read_text()+"\nDistinct child submission identity.\n")
+    child=submitter.submit(prompt,existing_parent=unrelated)
+    assert child.run_id==unrelated
+    for _ in range(4): worker.run_once(unrelated,"child-only")
+    status=parent.durable_goal_status(unrelated)
+    assert status["status"]=="incomplete" and status["exit_code"]==2
+    assert all(graph["complete"] for graph in status["graphs"])
+
+
+def test_default_projection_denies_direct_graph_mutation(chain):
+    parent,worker,receipt,*_=chain
+    with pytest.raises(Exception,match="permission denied"):
+        with parent._repo.transaction() as cur:
+            cur.execute("UPDATE horizon_goal_graphs SET outcome=NULL WHERE run_id=%s",(receipt.run_id,))
+
+
+def test_paused_run_refuses_new_graph_bind(chain):
+    from copy import deepcopy
+    from goal_completion import graphs
+    parent,worker,receipt,*_=chain
+    spec=deepcopy(graphs(parent,receipt.run_id)[0]["spec"])
+    spec["run_id"]="new-disposable-graph"
+    parent.persist_goal_state(receipt.run_id,"WAITING_OPERATOR")
+    with pytest.raises(ValueError,match="paused run"):
+        parent.bind_goal_graph(receipt.run_id,spec)
+    assert len(graphs(parent,receipt.run_id))==1
+
+
+def test_sql_finalizer_requires_executor_evidence(chain,monkeypatch):
+    import goal_completion
+    parent,worker,receipt,*_=chain
+    for _ in range(3): worker.run_once(receipt.run_id,"progress")
+    task=parent.claim_next(receipt.run_id,"last")
+    original=parent.record_evidence
+    # Simulate a deficient caller that omits executor index entries; never
+    # disable the append-only database guard or mutate existing evidence.
+    def omit_executor(**kwargs):
+        if kwargs["producer"]!="executor": return original(**kwargs)
+    with monkeypatch.context() as m:
+        m.setattr(parent,"record_evidence",omit_executor)
+        assert worker._run_claimed_task(task,"last").terminal_state=="verified"
+    graph=goal_completion.graphs(parent,receipt.run_id)[0]
+    with pytest.raises(Exception,match="missing verified executor evidence"):
+        with parent._repo.transaction() as cur:
+            cur.execute("SELECT horizon_complete_graph(%s,%s,%s,%s,%s::jsonb)",
+                (receipt.run_id,receipt.run_id,graph["digest"],parent._ensure_epoch(receipt.run_id),'{"status":"complete"}'))
 
 
 @pytest.mark.parametrize("db_url",["live-stack"],indirect=True)

@@ -37,6 +37,9 @@ that subsequently corrupted artifacts remain valid. COMPLETE_WITH_RESIDUALS is
 not manufactured: required failures remain blockers. Pause writes are fsynced and
 serialized with reconciliation via the same run-directory lock. SQL separately
 checks durable scheduling/run state, lease and epoch.
+New graph binding also takes the pause lock and refuses a filesystem-paused run.
+SQL independently requires both verified executor and auditor evidence index rows;
+the Python boundary additionally checks the retained file bytes.
 
 ## External review source ownership
 
@@ -54,6 +57,11 @@ Cursor route, this entry point stops rather than translating OpenRouter/OpenAI
 names. Additional explicitly approved route configurations are a dependency for
 any such phase. No source test or independent code review invokes this installed
 launcher, and no OpenRouter call is made by this repair.
+After independent review, the source-owned launcher removes inherited non-Cursor
+transports/credential loading entirely, retains the actual stream-init model in
+history, and binds the transmitted review packet to the subject digest. The
+installed original and Git history retain provenance; this is not a deployed
+command rename or a claim that all September seats have eligible Cursor routes.
 
 ## Bounded source-and-test provider: exact supported subset
 
@@ -136,3 +144,21 @@ Required/expanded suite counts and exact reviewed/tested SHA belong in the PR
 evidence for the final candidate, not a self-referential source commit. All model
 execution in these new suites is simulated. Fresh independent Cursor/Grok source
 review is required; prior exact-SHA approval does not cover this patch.
+
+## Independent-review follow-up
+
+The first exact-candidate Grok source review approved 5433fe7 with eight residual
+observations. This follow-up adds actual child-only submission/completion coverage,
+raw Cursor identity retention and explicit rejected-prior-verdict cases; SQL now
+requires executor evidence too, with a direct-function rejection test. Pause blocks
+new graph binding, and default disposable tests check forbidden table writes.
+The acceptance helper parameter now says profile; unused non-Cursor transports
+and the unbound smoke implementation were removed. Concurrent finalizers race on
+the first outcome insert, not merely an already-completed receipt.
+
+The child-bundle test also exposed a missing mount in the test wrapper. Its two
+synthetic host-store bundles were moved to the local repair evidence directory;
+existing bundles were untouched. The wrapper now mounts a private tmpfs on the
+submission-bundle store, and CI provisions that mount point on its disposable VM.
+No installed source/service/release pointer or parked goal was changed. Final
+test counts and fresh follow-up source verdict must identify the new exact SHA.

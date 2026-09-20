@@ -381,7 +381,7 @@ def install_pinned_trust_anchors(
                     "source_digest": "38ec94c702a8f85fd261d3539fd3899cb4955fff428c2282870aca2a13d92101",
                     "legacy_source_digests": {
                         "017_goal_completion_disposable": "b8fa1755241ac9089ca0c427f8663f77c9b61d025dfa016270b31c3b96d912e2",
-                        "021_goal_completion": "acf255eb8b83f4f17a0c4aff1f3ecc3ca10bbc5323aefdaf58e5a74998e04a15",
+                        "021_goal_completion": "1eb63322b53e1c354b86517f1efa7be9e78acf5670ef0e3dc75d2d1e5d809379",
                         "004_longspan_workflow": "bc01d0a94963dc64d36d1edab9cf2e602f5f96205f33c717b02f553fd3577b32",
                         "005_longspan_hardening": "bd0a4a166b5a59fada29f48a146532f98ac5c7a9f46b301b7dcd1a145bd5401f",
                         "006_longspan_authority": "b6a23a1240fbeb60066bb580ffcd28d5776e41f395ec6256a2cf94ebbff530eb",

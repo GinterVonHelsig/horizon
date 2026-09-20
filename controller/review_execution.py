@@ -37,7 +37,9 @@ def select_review(routing,seat,context,root,run_id):
             if result.get("status")!="success" or result.get("exit_code")!=0 or result.get("error_classification"):
                 raise ValueError("history lacks successful execution result")
             record=RoutingRecord(**entry["route"])
-            if (result.get("provider"),result.get("model"))!=(record.provider,record.model):
+            from harness_adapters.identity import canonical_model
+            actual_model=str(result.get("model","")).lower().replace(" ","-")
+            if result.get("provider")!=record.provider or canonical_model(actual_model)!=canonical_model(record.model):
                 raise ValueError("actual history identity mismatch")
             if kind=="reviews":
                 verdict=(result.get("structured_payload") or {}).get("verdict")
