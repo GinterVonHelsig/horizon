@@ -2,9 +2,20 @@
 # Fresh network/mount/PID namespaces: never connect to host PostgreSQL or trust files.
 set -euo pipefail
 if [[ ${1:-} != --inside ]]; then
+  export HORIZON_TEST_OUTER_MNT="$(readlink /proc/self/ns/mnt)"
+  export HORIZON_TEST_OUTER_NET="$(readlink /proc/self/ns/net)"
+  export HORIZON_TEST_OUTER_PID="$(readlink /proc/self/ns/pid)"
   exec unshare --mount --net --pid --cgroup --fork --mount-proc bash "$0" --inside "$@"
 fi
 shift
+# --inside is not a public shortcut: refuse it in the original namespaces
+# before mount or PostgreSQL setup can change anything.
+test -n "${HORIZON_TEST_OUTER_MNT:-}"
+test -n "${HORIZON_TEST_OUTER_NET:-}"
+test -n "${HORIZON_TEST_OUTER_PID:-}"
+test "$HORIZON_TEST_OUTER_MNT" != "$(readlink /proc/self/ns/mnt)"
+test "$HORIZON_TEST_OUTER_NET" != "$(readlink /proc/self/ns/net)"
+test "$HORIZON_TEST_OUTER_PID" != "$(readlink /proc/self/ns/pid)"
 mount --make-rprivate /
 mount -t tmpfs tmpfs /tmp
 mount -t tmpfs tmpfs /run
@@ -28,4 +39,5 @@ export TOP_DELIVERY_PG_ADMIN_URL='postgresql://root@127.0.0.1:5432/postgres'
 export TOP_DELIVERY_OPENROUTER_RELAY_TOKEN_FILE=/tmp/nonexistent-relay
 unset TOP_DELIVERY_DATABASE_URL TOP_DELIVERY_ADAPTER_CONFIG TOP_DELIVERY_RUN_ID TOP_DELIVERY_ARTIFACT_ROOT
 export PYTHONPATH="$PWD/controller"
+export PYTHONDONTWRITEBYTECODE=1
 python3 -m pytest "$@"

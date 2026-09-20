@@ -84,3 +84,12 @@ only the poll circuit breaker and records the reason; it does not execute tasks,
 change a controller epoch, reactivate a run, or reconcile unknown external effects.
 If the cause remains, the next poll blocks again. Restarting the service without
 this transition cannot clear a persisted block.
+# Historical-source qualification update (2026-09-20)
+
+See [historical-upgrade-tests.md](historical-upgrade-tests.md) for the recovered
+test-only baseline, exact hashes, isolated commands and rollback implications.
+Standalone017 admission is repaired without changing any schema body or installed
+pin. The original014 production replay restriction remains in force. Reconstructed
+source upgrades do not certify the actual production schema or authorize migration,
+activation, release-pointer changes or resuming parked goals. If rolling back this
+admission-only pass, restore code/config together; do not downgrade the database.

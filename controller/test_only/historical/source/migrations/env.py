@@ -111,8 +111,8 @@ _PROTECTED_TABLES_BY_TARGET = {
 # outside the root-owned provenance boundary.
 _DOWNGRADE_SOURCE_PATHS = {
     "007_longspan_authority_hardening": (
+        "014_requeue_blocked_parent_task",
         "013_cleanup_expired_attempt",
-        "014_horizon_project_ledger",
         "012_claim_parent_scope_fix",
         "011_goal_claim_fence_token_fix",
         "010_goal_claim_parent_task",
@@ -121,8 +121,8 @@ _DOWNGRADE_SOURCE_PATHS = {
         "007_longspan_authority_hardening",
     ),
     "006_longspan_authority": (
+        "014_requeue_blocked_parent_task",
         "013_cleanup_expired_attempt",
-        "014_horizon_project_ledger",
         "012_claim_parent_scope_fix",
         "011_goal_claim_fence_token_fix",
         "010_goal_claim_parent_task",
@@ -132,8 +132,8 @@ _DOWNGRADE_SOURCE_PATHS = {
         "006_longspan_authority",
     ),
     "005_longspan_hardening": (
+        "014_requeue_blocked_parent_task",
         "013_cleanup_expired_attempt",
-        "014_horizon_project_ledger",
         "012_claim_parent_scope_fix",
         "011_goal_claim_fence_token_fix",
         "010_goal_claim_parent_task",
@@ -144,8 +144,8 @@ _DOWNGRADE_SOURCE_PATHS = {
         "005_longspan_hardening",
     ),
     "004_longspan_workflow": (
+        "014_requeue_blocked_parent_task",
         "013_cleanup_expired_attempt",
-        "014_horizon_project_ledger",
         "012_claim_parent_scope_fix",
         "011_goal_claim_fence_token_fix",
         "010_goal_claim_parent_task",
@@ -238,49 +238,7 @@ _UPGRADE_SOURCE_PATHS = {
         "012_claim_parent_scope_fix",
         "013_cleanup_expired_attempt",
     ),
-    "014_horizon_project_ledger": (
-        "004_longspan_workflow",
-        "005_longspan_hardening",
-        "006_longspan_authority",
-        "007_longspan_authority_hardening",
-        "008_longspan_authority_repair",
-        "009_goal_schedule_task",
-        "010_goal_claim_parent_task",
-        "011_goal_claim_fence_token_fix",
-        "012_claim_parent_scope_fix",
-        "013_cleanup_expired_attempt",
-        "014_horizon_project_ledger",
-    ),
-    "015_subworkflow_handoff": (
-        "004_longspan_workflow",
-        "005_longspan_hardening",
-        "006_longspan_authority",
-        "007_longspan_authority_hardening",
-        "008_longspan_authority_repair",
-        "009_goal_schedule_task",
-        "010_goal_claim_parent_task",
-        "011_goal_claim_fence_token_fix",
-        "012_claim_parent_scope_fix",
-        "013_cleanup_expired_attempt",
-        "014_horizon_project_ledger",
-        "015_subworkflow_handoff",
-    ),
-    "016_horizon_prereq_corr": (
-        "004_longspan_workflow",
-        "005_longspan_hardening",
-        "006_longspan_authority",
-        "007_longspan_authority_hardening",
-        "008_longspan_authority_repair",
-        "009_goal_schedule_task",
-        "010_goal_claim_parent_task",
-        "011_goal_claim_fence_token_fix",
-        "012_claim_parent_scope_fix",
-        "013_cleanup_expired_attempt",
-        "014_horizon_project_ledger",
-        "015_subworkflow_handoff",
-        "016_horizon_prereq_corr",
-    ),
-    "020_horizon_prereq_corr_live": (
+    "014_requeue_blocked_parent_task": (
         "004_longspan_workflow",
         "005_longspan_hardening",
         "006_longspan_authority",
@@ -292,26 +250,8 @@ _UPGRADE_SOURCE_PATHS = {
         "012_claim_parent_scope_fix",
         "013_cleanup_expired_attempt",
         "014_requeue_blocked_parent_task",
-        "015_recover_executor_contract_failure",
-        "016_recover_exhausted_executor_contract_once",
-        "017_parent_rollback_routine",
-        "018_horizon_project_ledger_live",
-        "019_subworkflow_handoff_live",
-        "020_horizon_prereq_corr_live",
     ),
 }
-
-_UPGRADE_SOURCE_PATHS["021_goal_completion"] = _UPGRADE_SOURCE_PATHS["020_horizon_prereq_corr_live"] + ("021_goal_completion",)
-_UPGRADE_SOURCE_PATHS["017_goal_completion_disposable"] = _UPGRADE_SOURCE_PATHS["016_horizon_prereq_corr"] + ("021_goal_completion", "017_goal_completion_disposable")
-
-# Standalone live-stack targets must verify exactly the same predecessor sources
-# as the full upgrade. Admission without a path previously raised KeyError for
-# 017 (and the other intermediate live targets), before their guards could run.
-_live_chain = _UPGRADE_SOURCE_PATHS["020_horizon_prereq_corr_live"]
-for _revision in _live_chain:
-    _UPGRADE_SOURCE_PATHS.setdefault(
-        _revision, _live_chain[:_live_chain.index(_revision) + 1]
-    )
 
 if set(_DOWNGRADE_SOURCE_PATHS) != set(_PROTECTED_TABLES_BY_TARGET):
     raise RuntimeError(
@@ -347,8 +287,20 @@ def _requested_revision(command: str) -> str | None:
 def _guard_upgrade(connection) -> None:
     """Verify the pinned administrative transport before any upgrade DDL."""
     raw_target = _requested_revision("upgrade")
-    target = "021_goal_completion" if raw_target == "head" else raw_target
-    if target not in _UPGRADE_SOURCE_PATHS:
+    target = "014_requeue_blocked_parent_task" if raw_target == "head" else raw_target
+    if target not in {
+        '004_longspan_workflow',
+        '005_longspan_hardening',
+        '006_longspan_authority',
+        '007_longspan_authority_hardening',
+        '008_longspan_authority_repair',
+        '009_goal_schedule_task',
+        '010_goal_claim_parent_task',
+        '011_goal_claim_fence_token_fix',
+        '012_claim_parent_scope_fix',
+        '013_cleanup_expired_attempt',
+        '014_requeue_blocked_parent_task',
+    }:
         raise RuntimeError(
             "upgrade blocked: target must be a full canonical migration revision"
         )

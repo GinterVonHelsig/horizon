@@ -89,14 +89,14 @@ it is not claimed complete here. Unified Comms Relay remains separate.
 
 ## Schema/deployment and rollback — not installed
 
-UNMET deployment-lineage rehearsal: fresh upgrade to the live-stack 021 target
-stops in historical 014_requeue_blocked_parent_task, which deliberately raises
-because its live implementation is not present in this candidate checkout.
-The regression is retained as strict expected failure, not a passing migration
-claim. Obtain the authoritative source-owned pre-018 baseline/schema (no production
-database contents) before qualifying that upgrade path. Do not stamp past the
-guard, replace historical pins or reinterpret the disposable legacy projection
-as proof of the full live lineage. This remains an activation blocker.
+Historical-source lineage is now recovered and packaged test-only; see
+historical-upgrade-tests.md for exact hashes, archived provenance and reproduction.
+Both standalone017 and full016→021 upgrades are exercised with populated synthetic
+state. The maintained014 placeholder still refuses fresh replay, proved by an
+explicit negative test. Reconstructed-source evidence is not qualification of the
+uninspected production schema/data. Do not stamp past the guard, replace installed
+historical pins or deploy the test-only runner. Production compatibility remains
+an activation blocker; no additional baseline information is requested.
 
 New 021_goal_completion follows the live 020 stack. A disposable-only
 017_goal_completion_disposable projects the identical pinned schema above the
@@ -139,6 +139,13 @@ assessment; parked goals remain parked. No rollback implies controller activatio
 11 Pause/stop preservation: simulated; production parked goals untouched.
 12 Task/provider versus whole-goal status: new full-chain and CLI simulated tests,
   actual PostgreSQL graph outcomes, concurrent finalizers and lost responses.
+
+Additional upgrade/isolation acceptance: reconstructed historical source with
+paused/failed/active run rows, a queued task and controller owner/epoch/fence is
+preserved across both upgrade paths. Failed is NOT stopped. These cases and the
+original host-store-escape regression are now maintained CI tests; privileged
+fixtures fail closed without verified private storage and PostgreSQL. Production
+schema compatibility and new-tip live integration are still unverified.
 
 Required/expanded suite counts and exact reviewed/tested SHA belong in the PR
 evidence for the final candidate, not a self-referential source commit. All model

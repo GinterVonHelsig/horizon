@@ -8,6 +8,7 @@ import subprocess
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import psycopg2
@@ -50,6 +51,7 @@ from test_only.pinned_trust_session import (
 from test_disposable_helpers import TEST_SIGNING_KEY as _TEST_SIGNING_KEY
 from test_disposable_helpers import TEST_VERIFY_KEY as _TEST_VERIFY_KEY
 from test_role_provision import ensure_test_delivery_roles
+from test_only.isolation import require_isolation
 
 
 ADMIN_URL = os.environ.get(
@@ -323,12 +325,10 @@ def serialize_disposable_trust_state() -> Iterator[None]:
     serialization; it does not weaken the production trust boundary.
     """
 
-    lock_path = Path(
-        os.environ.get(
-            "TOP_DELIVERY_TEST_SESSION_LOCK",
-            "/tmp/top-delivery-controller-test-session.lock",
-        )
-    )
+    # Before even opening a lock or snapshotting pinned files/cluster roles.
+    # A direct pytest invocation must fail, not temporarily mutate host state.
+    require_isolation(ADMIN_URL)
+    lock_path = Path('/tmp/top-delivery-controller-test-session.lock')
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_file = lock_path.open("a+", encoding="utf-8")
     fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
@@ -457,6 +457,19 @@ def install_pinned_trust_anchors(
 
 
 @pytest.fixture()
+def controller_test_support():
+    # Do not import a bare `conftest` from tests: pytest may also load the sibling
+    # tests/conftest.py under that name, or duplicate signing-key initialization.
+    return SimpleNamespace(
+        ADMIN_URL=ADMIN_URL,
+        install_capability=_install_capability,
+        provision_role_users=_provision_role_users,
+        write_workflow_service_target=_write_workflow_service_target,
+        write_authority_service_target=_write_authority_service_target,
+    )
+
+
+@pytest.fixture()
 def db_url(request) -> Iterator[str]:
     name = f"td_test_{uuid.uuid4().hex}"
     _install_capability(operation="create_database", database_name=name)
@@ -472,9 +485,6 @@ def db_url(request) -> Iterator[str]:
         # Report the earliest boundary instead of repeating opaque subprocess
         # exit codes for every dependent test. Never expose connection secrets.
         diagnostic = redact_text(str(exc.stderr or exc.output or "migration failed"))
-        if getattr(request,"param",None)=="live-stack" and "014_requeue_blocked_parent_task is already applied on live; do not re-apply" in diagnostic:
-            from exceptions import MissingLiveMigrationBaselineError
-            raise MissingLiveMigrationBaselineError("archived live 014 source is unavailable; fresh replay intentionally denied") from exc
         raise RuntimeError("disposable migration failed: " + diagnostic[-4096:]) from exc
     workflow_url, authority_url = _provision_role_users(ADMIN_URL, name)
     _write_workflow_service_target(workflow_url, name)

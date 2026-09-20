@@ -1,5 +1,6 @@
 """Actual submission/provider/worker/database, SIMULATED model execution only."""
 import json
+import uuid
 from pathlib import Path
 import pytest
 
@@ -9,7 +10,6 @@ from worker import TaskWorker
 from test_only.recovery_fakes import SimulatedAdapter, route_config
 from test_bounded_delivery import configuration, SimulatedCursor
 from bounded_delivery import BoundedDeliveryAdapter
-from exceptions import MissingLiveMigrationBaselineError
 
 
 @pytest.fixture
@@ -220,7 +220,9 @@ def test_tampered_completed_evidence_is_not_cli_success(chain,artifact_root):
 def test_child_graph_completion_is_not_whole_parent(chain,monkeypatch):
     parent,worker,receipt,writer,author,submitter,prompt=chain
     monkeypatch.setenv("TOP_DELIVERY_REQUIRE_TRUSTED_SUBMISSIONS","1")
-    unrelated="goal-1111222233334444"
+    # Each DB fixture is distinct; the private trusted store spans the session.
+    # Do not collide when this same regression runs against both schema lineages.
+    unrelated="goal-"+uuid.uuid4().hex[:16]
     parent.register_run(unrelated)
     prompt.write_text(prompt.read_text()+"\nDistinct child submission identity.\n")
     child=submitter.submit(prompt,existing_parent=unrelated)
@@ -228,6 +230,9 @@ def test_child_graph_completion_is_not_whole_parent(chain,monkeypatch):
     for _ in range(4): worker.run_once(unrelated,"child-only")
     status=parent.durable_goal_status(unrelated)
     assert status["status"]=="incomplete" and status["exit_code"]==2
+    assert len(status["graphs"])==1
+    assert status["graphs"][0]["id"]==child.submission_run_id
+    assert status["graphs"][0]["id"]!=unrelated
     assert all(graph["complete"] for graph in status["graphs"])
 
 
@@ -270,11 +275,5 @@ def test_sql_finalizer_requires_executor_evidence(chain,monkeypatch):
                 (receipt.run_id,receipt.run_id,graph["digest"],parent._ensure_epoch(receipt.run_id),'{"status":"complete"}'))
 
 
-@pytest.mark.parametrize("db_url",["live-stack"],indirect=True)
-@pytest.mark.xfail(strict=True,raises=MissingLiveMigrationBaselineError,reason="UNMET live-lineage rehearsal: authoritative historical 014 baseline unavailable; guard preserved")
-def test_same_chain_on_deployment_schema_in_disposable_database(chain,db_url):
-    parent,worker,run=finish(chain)
-    assert parent.durable_goal_status(run)["status"]=="complete"
-    with pytest.raises(Exception,match="permission denied"):
-        with parent._repo.transaction() as cur:
-            cur.execute("UPDATE horizon_goal_graphs SET outcome=NULL WHERE run_id=%s",(run,))
+# Recovered live-lineage full-chain and denied-direct-write assertions are in
+# test_historical_upgrade.py, alongside an explicit fresh-replay rejection test.

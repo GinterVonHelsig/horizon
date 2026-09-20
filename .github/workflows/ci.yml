@@ -50,6 +50,7 @@ jobs:
             tests/test_artifact_owner.py \
             tests/test_goal_dependencies.py
           python3 -m pytest -q tests/test_comms_relay_names.py
+          python3 -m pytest -q tests/test_privileged_isolation.py tests/test_migration_target_paths.py
 
   disposable-recovery:
     runs-on: ubuntu-latest
@@ -88,6 +89,8 @@ jobs:
             controller/test_recovery_acceptance.py \
             controller/test_bounded_delivery.py \
             controller/test_goal_completion.py \
+            controller/test_historical_upgrade.py \
+            controller/test_fixture_isolation.py \
             controller/test_source_delivery.py \
             controller/test_subworkflow_handoff.py \
             controller/test_subworkflow_handoff_integration.py \
