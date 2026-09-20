@@ -56,6 +56,44 @@ def test_normal_duplicate_and_truthful_completion(parent, artifact_root, prompt)
         assert cur.fetchone()["n"] == 1
 
 
+@pytest.mark.parametrize("failure_role", ["executor", "auditor"])
+def test_uncertain_effect_is_blocked_without_retry_after_restart(parent, artifact_root, prompt, failure_role):
+    from dataclasses import replace
+    class FailedAfterEffect(SimulatedAdapter):
+        def execute(self, request):
+            result = super().execute(request)
+            return replace(result, status="failed", exit_code=1, error_classification="process_failure", retryable=True)
+    receipt = submit(parent, artifact_root, prompt)
+    writer_cls = FailedAfterEffect if failure_role == "executor" else SimulatedAdapter
+    review_cls = FailedAfterEffect if failure_role == "auditor" else SimulatedAdapter
+    writer = writer_cls("simulated-writer")
+    reviewer = review_cls("simulated-reviewer", review=True)
+    adapters = {"simulated-writer": writer, "simulated-reviewer": reviewer}
+    first = TaskWorker(parent, artifact_root, adapters).run_once(receipt.run_id, "first")
+    assert first.terminal_state == "blocked:execution_outcome_requires_review"
+    assert parent.task(receipt.task_ids[0]).state == "blocked"
+    assert TaskWorker(parent, artifact_root, adapters).run_once(receipt.run_id, "restart") is None
+    assert writer.calls == 1
+    effects = list(artifact_root.rglob("tiny-result.txt"))
+    assert len(effects) == 1
+    assert effects[0].read_text() == "simulated disposable result\n"
+
+
+def test_disposable_worker_uses_author_aware_policy(parent, artifact_root, prompt):
+    from model_routing import load_model_routing
+    receipt = submit(parent, artifact_root, prompt)
+    writer = SimulatedAdapter("simulated-writer")
+    reviewer = SimulatedAdapter("simulated-reviewer", review=True)
+    writer.provider, writer.model = "cursor", "composer-latest"
+    reviewer.provider, reviewer.model = "openai", "gpt-6-astra"
+    policy = load_model_routing(Path(__file__).resolve().parents[1] / "architecture/model-routing.yaml")
+    result = TaskWorker(parent, artifact_root, {"simulated-writer": writer, "simulated-reviewer": reviewer},
+                        routing_policy=policy).run_once(receipt.run_id, "policy-worker")
+    assert result.terminal_state == "verified"
+    assert parent.task(receipt.task_ids[0]).state == "verified"
+    assert writer.calls == reviewer.calls == 1
+
+
 @pytest.mark.parametrize("boundary", ["register", "schedule"])
 def test_partial_submission_recovers(parent, artifact_root, prompt, monkeypatch, boundary):
     target = parent._repo if boundary == "register" else parent

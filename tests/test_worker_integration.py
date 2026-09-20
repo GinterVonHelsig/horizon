@@ -236,7 +236,7 @@ def _worker(
     )
 
 
-def test_queueable_rate_limit_retries_via_goal_runner(transport_bundle: dict[str, Any]) -> None:
+def test_rate_limit_after_intent_blocks_uncertain_replay(transport_bundle: dict[str, Any]) -> None:
     controller = IntegrationController()
     controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
     worker = _worker(
@@ -248,9 +248,9 @@ def test_queueable_rate_limit_retries_via_goal_runner(transport_bundle: dict[str
         },
     )
     result = worker.run_once("run-1", "worker-1")
-    assert result and result.terminal_state == "retry_queued"
-    assert controller.retries
-    assert "provider_limit" in controller.retries[0][1]
+    assert result and result.terminal_state == "blocked:execution_outcome_requires_review"
+    assert not controller.retries
+    assert worker.run_once("run-1", "restart") is None
 
 
 def test_missing_credential_parks_without_killing_worker_loop(transport_bundle: dict[str, Any]) -> None:

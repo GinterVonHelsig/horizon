@@ -326,11 +326,15 @@ ProtectHome=true
 ProtectSystem=strict
 ReadOnlyPaths=/opt/top-delivery {checkout_root}
 ReadWritePaths=/var/lib/top-delivery/runs /var/lib/top-delivery/adapter-runtime
+StateDirectory=top-delivery/worker-health
+StateDirectoryMode=0700
+Environment=TOP_DELIVERY_WORKER_HEALTH_DIR=/var/lib/top-delivery/worker-health
 RuntimeDirectory=top-delivery-worker
 CapabilityBoundingSet=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 Restart=on-failure
 RestartSec=5
+RestartPreventExitStatus=78
 
 [Install]
 WantedBy=multi-user.target

@@ -50,6 +50,7 @@ class RoutingRecord:
     account_class: str
     effort: str | None
     fallback_reason: str | None
+    verdict: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +62,7 @@ class RoutingRecord:
             "account_class": self.account_class,
             "effort": self.effort,
             "fallback_reason": self.fallback_reason,
+            "verdict": self.verdict,
         }
 
 
@@ -212,8 +214,12 @@ def _resolve_review(
         raise IndependentReviewBlocked(f"phase {phase}: actual author history required")
     if available is None:
         raise IndependentReviewBlocked(f"phase {phase}: qualified reviewer availability required")
-    if phase == "1.6" and not any(route.phase == "1.5" for route in prior_reviews):
-        raise IndependentReviewBlocked(f"phase {phase}: prior required review history missing")
+    order = routing.get("review_sequence", {}).get("required_order", [])
+    if phase in order and order.index(phase) > 0:
+        previous = order[order.index(phase) - 1]
+        completed = [route for route in prior_reviews if route.phase == previous]
+        if len(completed) != 1 or not review_sequence_allows_next(routing, previous, completed[0].verdict, phase):
+            raise IndependentReviewBlocked(f"phase {phase}: passing prior review required (one completed {previous} verdict)")
     forbidden = set()
     for route in (*authors, *prior_reviews):
         if not route.provider or not route.model:
@@ -268,10 +274,33 @@ def build_routing_records(
     prior_review_routes: tuple[RoutingRecord, ...] = (),
     available_routes: frozenset[tuple[str, str]] | None = None,
 ) -> list[RoutingRecord]:
+    # Plans are NOT completed reviews. Never manufacture a passing verdict or
+    # accumulate planned records as if their adapters had run successfully.
     return [resolve_phase_route(
         routing, phase, author_routes=author_routes,
         prior_review_routes=prior_review_routes, available_routes=available_routes,
     ) for phase in phases]
+
+
+def authorize_task_review(
+    routing: dict[str, Any], author_identity: tuple[str, str], reviewer_identity: tuple[str, str],
+) -> RoutingRecord:
+    """Gate an explicitly authorized worker pair; never select another adapter.
+
+    Inventory is the single registered/preflighted reviewer the task authorized,
+    not every model mentioned by YAML. Provider/transport must match exactly;
+    model aliases are normalized only within that provider. The real executor
+    supplies author identity, never a workstream's claimed author metadata.
+    """
+    provider, model = author_identity
+    author = RoutingRecord("3A", "actual-task-executor", provider, model,
+                           _harness_for_provider(provider), _account_class_for_provider(provider), None, None)
+    entries = [routing["phases"]["4"], *routing["phases"]["4"].get("fallbacks", [])]
+    entries += [rule["remap"]["4"] for rule in routing.get("independence", {}).get("author_failover_by_model", {}).values() if "4" in rule.get("remap", {})]
+    available = frozenset((item["provider"], item["model"]) for item in entries
+                          if item["provider"] == reviewer_identity[0]
+                          and canonical_model(item["model"]) == canonical_model(reviewer_identity[1]))
+    return resolve_phase_route(routing, "4", author_routes=(author,), available_routes=available)
 
 
 def validate_routing_records(records: list[RoutingRecord]) -> None:

@@ -30,11 +30,13 @@ def _available(routing):
 
 def resolve_phase_route(routing, phase, **kwargs):
     kwargs.setdefault("available_routes", _available(routing))
-    if phase == "1.6" and kwargs.get("author_routes") and "prior_review_routes" not in kwargs:
-        first = _resolve_phase_route(routing, "1.5", author_routes=kwargs["author_routes"],
-                                     available_routes=_available(routing))
-        kwargs["prior_review_routes"] = (first,)
     return _resolve_phase_route(routing, phase, **kwargs)
+
+
+def simulated_passing_first_review(routing, authors):
+    """Explicit simulated completion, not a selector-generated verdict."""
+    first = resolve_phase_route(routing, "1.5", author_routes=authors)
+    return (replace(first, verdict="pass"),)
 
 
 def _author(routing, phase="3A"):
@@ -194,7 +196,7 @@ def test_review_without_qualified_availability_stops():
 
 def test_second_required_review_requires_first_seat_identity():
     routing = load_model_routing(_routing_path())
-    with pytest.raises(IndependentReviewBlocked, match="prior required review history"):
+    with pytest.raises(IndependentReviewBlocked, match="passing prior review"):
         _resolve_phase_route(routing, "1.6", author_routes=(_author(routing, "1"),),
                              available_routes=_available(routing))
 
@@ -225,7 +227,8 @@ def test_grok_and_astra_authors_cannot_be_selected_by_competing_remaps():
     routing = load_model_routing(_routing_path())
     authors = (_author(routing, "1"), resolve_phase_route(routing, "1", use_fallback_index=0))
     for history in (authors, tuple(reversed(authors))):
-        record = resolve_phase_route(routing, "1.6", author_routes=history)
+        record = resolve_phase_route(routing, "1.6", author_routes=history,
+                                     prior_review_routes=simulated_passing_first_review(routing, history))
         assert record.model == "z-ai/glm-5.3"
 
 
@@ -240,7 +243,8 @@ def test_batch_selection_cannot_bypass_missing_history():
 def test_astra_author_is_remapped_across_transport_and_effort(phase, model, alias):
     routing = load_model_routing(_routing_path())
     author = replace(_author(routing, "1"), provider="cursor", model=alias)
-    selected = resolve_phase_route(routing, phase, author_routes=(author,))
+    selected = resolve_phase_route(routing, phase, author_routes=(author,),
+                                  prior_review_routes=simulated_passing_first_review(routing, (author,)) if phase == "1.6" else ())
     assert selected.model == model
     assert selected.provider == "openrouter"
     assert selected.fallback_reason == "author-independence-remap"
@@ -251,6 +255,7 @@ def test_independent_families_and_previous_required_seat():
     authors = tuple(_author(routing, phase) for phase in ("0", "1", "2", "3A"))
     first = resolve_phase_route(routing, "1.5", author_routes=authors)
     assert first.model == "gemini-3.8-flash-high"  # Sol cannot review an OpenAI author.
+    first = replace(first, verdict="pass")  # Simulated successful completion.
     second = resolve_phase_route(routing, "1.6", author_routes=authors, prior_review_routes=(first,))
     assert second.model == "x-ai/grok-4.6"
     # Availability cannot authorize a conflicting author or reuse a review family.
@@ -264,13 +269,15 @@ def test_unavailable_remap_uses_only_eligible_configured_route_or_stops():
     routing = load_model_routing(_routing_path())
     authors = (_author(routing, "1"),)
     selected = resolve_phase_route(routing, "1.6", author_routes=authors,
+                                  prior_review_routes=simulated_passing_first_review(routing, authors),
                                   available_routes=frozenset({("openrouter", "z-ai/glm-5.3")}),
                                   fallback_reason="qualified-route-unavailable")
     assert selected.model == "z-ai/glm-5.3"
     assert selected.fallback_reason == "qualified-route-unavailable"
     for available in (frozenset(), frozenset({("openai", "gpt-6-astra")})):
         with pytest.raises(IndependentReviewBlocked, match="no eligible"):
-            resolve_phase_route(routing, "1.6", author_routes=authors, available_routes=available)
+            resolve_phase_route(routing, "1.6", author_routes=authors, available_routes=available,
+                                prior_review_routes=simulated_passing_first_review(routing, authors))
 
 
 def test_explicit_fallback_cannot_bypass_author_independence():

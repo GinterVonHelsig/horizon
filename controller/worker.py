@@ -89,12 +89,14 @@ class TaskWorker:
         goal_snapshots: dict[str, GoalSnapshot] | None = None,
         transport_owner: str = "top-delivery-worker",
         adapter_config: dict[str, Any] | None = None,
+        routing_policy: dict[str, Any] | None = None,
     ) -> None:
         self._controller = controller
         self._configured_artifact_root = Path(artifact_root).resolve()
         self._artifact_root = self._configured_artifact_root
         self._adapters = adapters
         self._adapter_config = adapter_config
+        self._routing_policy = routing_policy
         self._default_executor = default_executor
         self._default_auditor = default_auditor
         self._cancel_event = cancel_event
@@ -232,7 +234,7 @@ class TaskWorker:
                 # A lost result cannot authorize a replay of the same logical task.
                 intents = self._artifact_root / "execution-intents"
                 intents.mkdir(mode=0o700, exist_ok=True)
-                intent = intents / (hashlib.sha256(f"{run_id}:{task.task_id}".encode()).hexdigest() + ".json")
+                intent = self._execution_intent_path(run_id, task.task_id)
                 try:
                     fd = os.open(intent, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                 except FileExistsError:
@@ -248,6 +250,7 @@ class TaskWorker:
                 finally:
                     os.close(directory_fd)
                 executor_result = self._execute_adapter(executor, executor_request)
+                self._validate_execution_identity(executor_id, executor_result)
                 executor_evidence = self._persist_validate_and_record(
                     run_id, task.task_id, attempt_id, fence, "executor", attempt_dir / "executor", executor_result
                 )
@@ -285,6 +288,8 @@ class TaskWorker:
                 return self._handle_adapter_failure(task, generation, executor_result, "executor", context=context)
 
             try:
+                # Recheck actual adapter identities immediately before review.
+                self._resolve_routing(context)
                 self._authorize_adapter_execution(run_id, auditor_id, context)
                 auditor_request = self._build_auditor_request(
                     task, attempt_id, auditor_id, attempt_dir / "auditor", context,
@@ -298,6 +303,7 @@ class TaskWorker:
                 )
             try:
                 auditor_result = self._execute_adapter(auditor, auditor_request)
+                self._validate_execution_identity(auditor_id, auditor_result)
                 self._persist_validate_and_record(
                     run_id, task.task_id, attempt_id, fence, "auditor", attempt_dir / "auditor", auditor_result
                 )
@@ -400,6 +406,9 @@ class TaskWorker:
             attempt = 1
         return TaskSnapshot(task_id=task.task_id, path_id=path_id, attempt=attempt)
 
+    def _execution_intent_path(self, run_id: str, task_id: str) -> Path:
+        return self._artifact_root / "execution-intents" / (hashlib.sha256(f"{run_id}:{task_id}".encode()).hexdigest() + ".json")
+
     def _handle_failure(
         self,
         task: Any,
@@ -420,6 +429,12 @@ class TaskWorker:
             self._controller.complete_task(task.run_id, task.task_id, generation, "parked")
             return WorkerRunResult(task.task_id, "parked")
         if decision.task_state == RETRY_QUEUE:
+            # Retryability of a transport error is not proof of no effects.
+            # A durable intent survives processes/attempts; never promise a
+            # queued retry that would either replay effects or hit its guard.
+            if self._execution_intent_path(task.run_id, task.task_id).exists():
+                self._controller.complete_task(task.run_id, task.task_id, generation, "blocked")
+                return WorkerRunResult(task.task_id, "blocked:execution_outcome_requires_review")
             delay = float(decision.retry_delay_seconds or 0)
             self._controller.retry_task(
                 task.run_id, task.task_id, generation, reason, delay=delay,
@@ -693,7 +708,24 @@ class TaskWorker:
         identities = [adapter_effective_identity(self._adapters[key]) for key in (executor_id, auditor_id)]
         if any(identity is None or identity_is_forbidden(identity) for identity in identities) or identities_conflict(*identities):
             raise WorkerConfigurationError("executor and auditor require distinct complete effective identities")
+        if self._routing_policy is not None:
+            from model_routing import authorize_task_review
+            record = authorize_task_review(self._routing_policy, identities[0], identities[1])
+            context["review_routing"] = record.to_dict()
+            if self._adapter_config is not None:
+                preflight_adapters({**self._adapter_config, "routes": {
+                    "default_executor": executor_id, "default_auditor": auditor_id,
+                }}, probe_http=True)
         return executor_id, auditor_id
+
+    def _validate_execution_identity(self, adapter_id: str, result: HarnessResult) -> None:
+        if self._routing_policy is None:
+            return  # Dependency-injected legacy/test workers have no phase policy.
+        from harness_adapters.identity import adapter_effective_identity, config_effective_identity
+        expected = adapter_effective_identity(self._adapters[adapter_id])
+        actual = config_effective_identity({"provider": result.provider, "model": result.model})
+        if result.adapter_id != adapter_id or actual != expected:
+            raise EvidenceIntegrityError("executed adapter identity differs from authorized route")
 
     @staticmethod
     def _selected_route(context: dict[str, Any], adapter_id: str) -> bool:

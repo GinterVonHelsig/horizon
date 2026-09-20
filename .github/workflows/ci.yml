@@ -33,6 +33,8 @@ jobs:
           python3 -m pytest -q --tb=short \
             tests/test_openrouter_budget.py \
             tests/test_model_routing.py \
+            tests/test_review_remediation.py \
+            tests/test_comms01_release_deploy.py \
             tests/test_f2_model_identity.py \
             tests/test_auditor_bind.py \
             tests/test_retry_task_exhaust_order.py \

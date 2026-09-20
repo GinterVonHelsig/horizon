@@ -86,6 +86,7 @@ def _main(argv: list[str] | None = None) -> int:
             repo_name=os.environ.get("TOP_DELIVERY_MIRROR_REPO", "top-delivery"),
         )
     from goal_runner import GoalRunner
+    from model_routing import load_model_routing
 
     worker = TaskWorker(
         controller,
@@ -96,6 +97,8 @@ def _main(argv: list[str] | None = None) -> int:
         goal_runner=GoalRunner(budget_guard=budget_guard),
         worktree_transport=transport,
         transport_owner=args.owner,
+        adapter_config=config,
+        routing_policy=load_model_routing(Path(__file__).resolve().parents[1] / "architecture/model-routing.yaml"),
     )
     loop = WorkerLoop(
         worker,
