@@ -4,6 +4,7 @@ import json
 import fcntl
 import os
 import uuid
+import subprocess
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -458,7 +459,14 @@ def db_url() -> Iterator[str]:
     name = f"td_test_{uuid.uuid4().hex}"
     _install_capability(operation="create_database", database_name=name)
     url = create_disposable_database(ADMIN_URL, name)
-    run_migrations(url)
+    try:
+        run_migrations(url)
+    except subprocess.CalledProcessError as exc:
+        from harness_adapters.redaction import redact_text
+        # Report the earliest boundary instead of repeating opaque subprocess
+        # exit codes for every dependent test. Never expose connection secrets.
+        diagnostic = redact_text(str(exc.stderr or exc.output or "migration failed"))
+        raise RuntimeError("disposable migration failed: " + diagnostic[-4096:]) from exc
     workflow_url, authority_url = _provision_role_users(ADMIN_URL, name)
     _write_workflow_service_target(workflow_url, name)
     _write_authority_service_target(authority_url, name)

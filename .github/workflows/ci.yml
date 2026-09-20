@@ -64,6 +64,13 @@ jobs:
           sudo install -d -m 755 /etc/top-delivery
       - name: Exercise real persistence with simulated model execution
         run: |
+          # Migration sources are trust anchors and must be root-owned. Keep
+          # the runner checkout intact; stage a private trusted copy on this VM.
+          test ! -e /opt/horizon-recovery-ci
+          sudo install -d -m 755 /opt/horizon-recovery-ci
+          sudo cp -R --no-preserve=ownership "$GITHUB_WORKSPACE/." /opt/horizon-recovery-ci/
+          sudo chmod -R go-w /opt/horizon-recovery-ci
+          cd /opt/horizon-recovery-ci
           sudo env PATH="$PATH" bash scripts/test-recovery-isolated.sh -q --tb=short \
             controller/test_recovery_acceptance.py \
             controller/test_subworkflow_handoff.py \
