@@ -303,10 +303,10 @@ def authorize_task_review(
     return resolve_phase_route(routing, "4", author_routes=(author,), available_routes=available)
 
 
-def authorize_delivery_review(routing, author_identity, reviewer_identity):
+def authorize_delivery_review(routing, author_identity, reviewer_identity, *, profile="gateway-delivery-disposable-file.v1"):
     """Explicit bounded-profile transport policy; no OpenRouter alias/fallback."""
     from copy import deepcopy
-    profile = routing.get("delivery_profiles", {}).get("gateway-delivery-disposable-file.v1")
+    profile = routing.get("delivery_profiles", {}).get(profile)
     if not isinstance(profile, dict) or profile.get("automatic_retries") != 0:
         raise IndependentReviewBlocked("bounded delivery profile is not authorized")
     policy = deepcopy(routing)

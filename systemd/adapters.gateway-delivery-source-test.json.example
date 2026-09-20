@@ -1,0 +1,19 @@
+{
+  "routes": {"default_executor": "gateway-delivery-source-test", "default_auditor": "cursor-independent-review"},
+  "adapters": [
+    {
+      "id": "gateway-delivery-source-test", "kind": "gateway_delivery", "provider": "cursor", "model": "composer-2.5",
+      "executable": "/usr/bin/cursor-agent", "approval_mode": "never", "credential_env": [],
+      "timeout_seconds": 300, "allowed_cwd_roots": ["/tmp/horizon-disposable-source-test"],
+      "subscription_only": true, "on_demand_disabled": true,
+      "delivery_spec": {"profile": "gateway-delivery-source-test.v1", "prerequisite_id": "increment",
+        "filename": "solution.py", "recipe": "python-integer-function.v1", "function": "increment", "argument": "x",
+        "cases": [{"input": 0, "expected": 1}, {"input": 7, "expected": 8}, {"input": -2, "expected": -1}]}
+    },
+    {
+      "id": "cursor-independent-review", "kind": "cursor_cli", "provider": "cursor", "model": "cursor-grok-4.6-high",
+      "executable": "/usr/bin/cursor-agent", "approval_mode": "never", "cursor_mode": "ask",
+      "credential_env": [], "timeout_seconds": 300, "allowed_cwd_roots": ["/tmp/horizon-disposable-source-test"]
+    }
+  ]
+}

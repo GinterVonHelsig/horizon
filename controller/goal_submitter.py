@@ -89,6 +89,7 @@ class GoalSubmitter:
         *,
         mode: str = "durable",
         task_routing: TaskRoutingSnapshot | None = None,
+        prerequisites: dict[int, list[dict]] | None = None,
     ) -> None:
         if mode not in {"durable", "dry_run"}:
             raise ValueError("mode must be durable or dry_run")
@@ -96,6 +97,7 @@ class GoalSubmitter:
         self._artifact_root = _absolute(Path(artifact_root))
         self._mode = mode
         self._task_routing = task_routing
+        self._prerequisites = json.loads(json.dumps(prerequisites or {}))
         if not self._artifact_root.is_dir():
             raise ValueError("artifact_root must be an existing directory")
 
@@ -138,6 +140,9 @@ class GoalSubmitter:
         # fresh artifacts are made accessible to the service/executor identity.
         # A replay must match this canonical spec or use explicitly pinned recovery.
         spec_bytes = self._goal_spec_bytes(parsed, prompt_bytes.decode("utf-8"))
+        admission=getattr(self._controller,"validate_goal_graph",None)
+        if self._mode=="durable" and callable(admission):
+            admission(json.loads(spec_bytes))
         expected_spec_digest = hashlib.sha256(spec_bytes).hexdigest()
 
         existing = spec_path.exists()
@@ -176,6 +181,9 @@ class GoalSubmitter:
             )
 
         if ready:
+            bind = getattr(self._controller, "bind_goal_graph", None)
+            if self._mode == "durable" and callable(bind):
+                bind(schedule_run_id, json.loads(spec_bytes))
             for workstream in root_workstreams(parsed.workstreams):
                 self._schedule_workstream(schedule_run_id, workstream, len(parsed.workstreams))
 
@@ -263,6 +271,11 @@ class GoalSubmitter:
             ],
             "source": parsed.source,
         }
+        if self._prerequisites:
+            from goal_completion import validate_graph
+            if set(self._prerequisites) - {str(w.number) for w in parsed.workstreams}:
+                raise ValueError("prerequisite workstream does not exist")
+            validate_graph(spec)
         return (json.dumps(spec, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
     def _bound_workstream(self, workstream: object, bound_prompt: str) -> dict[str, object]:
@@ -283,6 +296,8 @@ class GoalSubmitter:
         if self._task_routing is not None:
             payload["executor_adapter"] = self._task_routing.executor_adapter
             payload["auditor_adapter"] = self._task_routing.auditor_adapter
+        if str(workstream.number) in self._prerequisites:
+            payload["prerequisites"] = self._prerequisites[str(workstream.number)]
         return payload
 
     def _schedule_workstream(

@@ -301,6 +301,9 @@ _UPGRADE_SOURCE_PATHS = {
     ),
 }
 
+_UPGRADE_SOURCE_PATHS["021_goal_completion"] = _UPGRADE_SOURCE_PATHS["020_horizon_prereq_corr_live"] + ("021_goal_completion",)
+_UPGRADE_SOURCE_PATHS["017_goal_completion_disposable"] = _UPGRADE_SOURCE_PATHS["016_horizon_prereq_corr"] + ("021_goal_completion", "017_goal_completion_disposable")
+
 if set(_DOWNGRADE_SOURCE_PATHS) != set(_PROTECTED_TABLES_BY_TARGET):
     raise RuntimeError(
         "downgrade admission and protected-table maps must cover the same targets"
@@ -335,8 +338,10 @@ def _requested_revision(command: str) -> str | None:
 def _guard_upgrade(connection) -> None:
     """Verify the pinned administrative transport before any upgrade DDL."""
     raw_target = _requested_revision("upgrade")
-    target = "020_horizon_prereq_corr_live" if raw_target == "head" else raw_target
+    target = "021_goal_completion" if raw_target == "head" else raw_target
     if target not in {
+        '021_goal_completion',
+        '017_goal_completion_disposable',
         '004_longspan_workflow',
         '005_longspan_hardening',
         '006_longspan_authority',

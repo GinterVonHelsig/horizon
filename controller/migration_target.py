@@ -27,6 +27,8 @@ CANONICAL_MIGRATION_REVISIONS = frozenset(
         "018_horizon_project_ledger_live",
         "019_subworkflow_handoff_live",
         "020_horizon_prereq_corr_live",
+        "021_goal_completion",
+        "017_goal_completion_disposable",
     }
 )
 
@@ -71,7 +73,7 @@ def requested_revision(command: str, config_obj: Any | None = None) -> str | Non
     if raw is None:
         return None
     if command == "upgrade" and raw == "head":
-        return "020_horizon_prereq_corr_live"
+        return "021_goal_completion"
     if raw not in CANONICAL_MIGRATION_REVISIONS:
         raise ValueError(f"{command} migration target is not a canonical revision")
     return raw

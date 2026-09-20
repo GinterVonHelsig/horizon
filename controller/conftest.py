@@ -380,6 +380,8 @@ def install_pinned_trust_anchors(
                     "revision": "008_longspan_authority_repair",
                     "source_digest": "38ec94c702a8f85fd261d3539fd3899cb4955fff428c2282870aca2a13d92101",
                     "legacy_source_digests": {
+                        "017_goal_completion_disposable": "b8fa1755241ac9089ca0c427f8663f77c9b61d025dfa016270b31c3b96d912e2",
+                        "021_goal_completion": "acf255eb8b83f4f17a0c4aff1f3ecc3ca10bbc5323aefdaf58e5a74998e04a15",
                         "004_longspan_workflow": "bc01d0a94963dc64d36d1edab9cf2e602f5f96205f33c717b02f553fd3577b32",
                         "005_longspan_hardening": "bd0a4a166b5a59fada29f48a146532f98ac5c7a9f46b301b7dcd1a145bd5401f",
                         "006_longspan_authority": "b6a23a1240fbeb60066bb580ffcd28d5776e41f395ec6256a2cf94ebbff530eb",
@@ -455,17 +457,24 @@ def install_pinned_trust_anchors(
 
 
 @pytest.fixture()
-def db_url() -> Iterator[str]:
+def db_url(request) -> Iterator[str]:
     name = f"td_test_{uuid.uuid4().hex}"
     _install_capability(operation="create_database", database_name=name)
     url = create_disposable_database(ADMIN_URL, name)
     try:
-        run_migrations(url)
+        if getattr(request,"param",None)=="live-stack":
+            from db import alembic_command
+            alembic_command(url,"upgrade","021_goal_completion")
+        else:
+            run_migrations(url)
     except subprocess.CalledProcessError as exc:
         from harness_adapters.redaction import redact_text
         # Report the earliest boundary instead of repeating opaque subprocess
         # exit codes for every dependent test. Never expose connection secrets.
         diagnostic = redact_text(str(exc.stderr or exc.output or "migration failed"))
+        if getattr(request,"param",None)=="live-stack" and "014_requeue_blocked_parent_task is already applied on live; do not re-apply" in diagnostic:
+            from exceptions import MissingLiveMigrationBaselineError
+            raise MissingLiveMigrationBaselineError("archived live 014 source is unavailable; fresh replay intentionally denied") from exc
         raise RuntimeError("disposable migration failed: " + diagnostic[-4096:]) from exc
     workflow_url, authority_url = _provision_role_users(ADMIN_URL, name)
     _write_workflow_service_target(workflow_url, name)

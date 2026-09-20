@@ -24,6 +24,6 @@ trap 'runuser -u postgres -- "$pgbin/pg_ctl" -D "$pgdata" -m immediate -w stop >
 runuser -u postgres -- "$pgbin/createuser" -h /run/postgresql --superuser root
 export TOP_DELIVERY_PG_ADMIN_URL='postgresql://root@127.0.0.1:5432/postgres'
 export TOP_DELIVERY_OPENROUTER_RELAY_TOKEN_FILE=/tmp/nonexistent-relay
-unset TOP_DELIVERY_DATABASE_URL TOP_DELIVERY_ADAPTER_CONFIG TOP_DELIVERY_RUN_ID
+unset TOP_DELIVERY_DATABASE_URL TOP_DELIVERY_ADAPTER_CONFIG TOP_DELIVERY_RUN_ID TOP_DELIVERY_ARTIFACT_ROOT
 export PYTHONPATH="$PWD/controller"
 python3 -m pytest "$@"

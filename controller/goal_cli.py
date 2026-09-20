@@ -95,6 +95,11 @@ def main(argv: list[str] | None = None) -> int:
     submit_parser.add_argument("--prompt", required=True, type=Path)
     submit_parser.add_argument("--artifact-root", default=None)
     submit_parser.add_argument("--database-url", default=None)
+    submit_parser.add_argument("--prerequisites-json", type=Path)
+    status_parser = subparsers.add_parser("status", help="read durable whole-goal status, not worker/task success")
+    status_parser.add_argument("--run-id", required=True)
+    status_parser.add_argument("--artifact-root", required=True)
+    status_parser.add_argument("--database-url", default=None)
     submit_parser.add_argument(
         "--adapter-config",
         default=os.environ.get("TOP_DELIVERY_ADAPTER_CONFIG"),
@@ -120,9 +125,17 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    prompt_path = Path(args.prompt).expanduser()
+    prompt_path = Path(args.prompt).expanduser() if hasattr(args, "prompt") else None
 
     try:
+        if args.command == "status":
+            controller = build_controller(_database_url_from_env(args.database_url), Path(args.artifact_root), dry_run=False)
+            try:
+                result = controller.durable_goal_status(args.run_id)
+                _emit(result)
+                return result["exit_code"]
+            finally:
+                controller.close()
         if args.command == "inspect":
             _emit(_inspect_payload(prompt_path))
             return 0
@@ -167,7 +180,8 @@ def main(argv: list[str] | None = None) -> int:
             elif not args.dry_run:
                 raise ValueError("durable submission requires --adapter-config with independent executable routes")
             receipt = GoalSubmitter(
-                controller, artifact_root, mode=mode, task_routing=task_routing
+                controller, artifact_root, mode=mode, task_routing=task_routing,
+                prerequisites=json.loads(args.prerequisites_json.read_text()) if args.prerequisites_json else None,
             ).submit(prompt_path, existing_parent=args.existing_parent)
         finally:
             close = getattr(controller, "close", None)

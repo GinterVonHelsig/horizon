@@ -127,16 +127,28 @@ class TaskWorker:
     def run_once(self, run_id: str, owner: str, *, expected_task_id: str | None = None) -> WorkerRunResult | None:
         self._preflight_adapters()
         self._prepare_run_root(run_id)
+        reconcile = getattr(self._controller, "reconcile_goal_graph", None)
+        if callable(reconcile):
+            reconcile(run_id)
         claim_options = {"expected_task_id": expected_task_id} if expected_task_id is not None else {}
         task = self._controller.claim_next(run_id, owner, **claim_options)
         if task is None:
             if expected_task_id is not None:
                 raise PermissionError("expected one-shot task was not claimed")
             return None
-        return self._run_claimed_task(task, owner)
+        result = self._run_claimed_task(task, owner)
+        if callable(reconcile):
+            reconcile(run_id)
+        return result
 
     def run_once_available(self, owner: str) -> WorkerRunResult | None:
         self._preflight_adapters()
+        repo = getattr(self._controller, "_repo", None)
+        reconcile = getattr(self._controller, "reconcile_goal_graph", None)
+        if repo is not None and callable(reconcile):
+            for run_id in repo.list_schedulable_run_ids():
+                self._prepare_run_root(run_id)
+                reconcile(run_id)
         claim = getattr(self._controller, "claim_next_available", None)
         if not callable(claim):
             return None
@@ -144,7 +156,10 @@ class TaskWorker:
         if task is None:
             return None
         self._prepare_run_root(task.run_id)
-        return self._run_claimed_task(task, owner)
+        result = self._run_claimed_task(task, owner)
+        if callable(reconcile):
+            reconcile(task.run_id)
+        return result
 
     def _prepare_run_root(self, run_id: str) -> None:
         dedicated = resolve_run_artifact_root(run_id, self._configured_artifact_root)
@@ -204,6 +219,10 @@ class TaskWorker:
             context: dict[str, Any] | None = None
             try:
                 context = self._task_context(run_id, task)
+                prerequisite_gate = getattr(self._controller, "prepare_prerequisites", None)
+                if callable(prerequisite_gate) and prerequisite_gate(task, context):
+                    cleanup_done = True  # Handoff transaction closed the parent attempt.
+                    return WorkerRunResult(task.task_id, "handoff_waiting")
                 executor_id, auditor_id = self._resolve_routing(context)
                 attempt_dir = self._safe_attempt_dir(run_id, attempt_id)
                 work_dir, writing_lease_owner = self._prepare_attempt_workdir(
@@ -716,11 +735,8 @@ class TaskWorker:
                 profile = request.get("handoff_context", {}).get("delivery_profile")
                 if profile:
                     context["delivery_profile"] = profile
-                    context["acceptance_criteria"] = [
-                        "Exact disposable file content verified for specification "
-                        + request["handoff_context"]["delivery_spec_digest"],
-                        "Disposable workspace contains only the authorized deliverable",
-                    ]
+                    from bounded_delivery import acceptance_for_spec
+                    context["acceptance_criteria"] = acceptance_for_spec(profile,request["handoff_context"]["delivery_spec_digest"])
                 return context
         spec = goal_spec_for_task(self._artifact_root, run_id, task_id)
         workstreams = spec.get("workstreams")
@@ -756,7 +772,7 @@ class TaskWorker:
                 raise WorkerConfigurationError("delivery profile requires explicit adapter configuration")
             validate_task_routes(self._adapter_config, executor_id, auditor_id)
             policy = self._routing_policy or load_model_routing(Path(__file__).resolve().parents[1] / "architecture/model-routing.yaml")
-            context["review_routing"] = authorize_delivery_review(policy, identities[0], identities[1]).to_dict()
+            context["review_routing"] = authorize_delivery_review(policy, identities[0], identities[1],profile=context["delivery_profile"]).to_dict()
         elif self._routing_policy is not None:
             from model_routing import authorize_task_review
             record = authorize_task_review(self._routing_policy, identities[0], identities[1])

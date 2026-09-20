@@ -19,10 +19,14 @@ from harness_adapters.redaction import contains_credential
 from subworkflow_handoff import (
     DISPOSABLE_DELIVERY_PROFILE, DISPOSABLE_FILE_CONTRACT, canonical_json,
     digest_value, validate_request, validate_product,
+    DELIVERY_CONTRACTS, SOURCE_TEST_PROFILE, SOURCE_TEST_CONTRACT,
 )
 
 
 def validate_spec(spec):
+    if isinstance(spec,dict) and spec.get("profile")==SOURCE_TEST_PROFILE:
+        from source_test_recipe import validate_spec as validate_source_spec
+        return validate_source_spec(spec)
     if not isinstance(spec, dict) or set(spec) != {"profile", "prerequisite_id", "filename", "content"}:
         raise ValueError("delivery specification keys invalid")
     if spec["profile"] != DISPOSABLE_DELIVERY_PROFILE:
@@ -36,6 +40,13 @@ def validate_spec(spec):
     if not isinstance(spec["content"], str) or not 1 <= len(spec["content"].encode()) <= 1024 or contains_credential(spec):
         raise ValueError("delivery content must be small and non-sensitive")
     return spec
+
+
+def acceptance_for_spec(spec, digest):
+    return [
+        ("Bounded source recipe tests verified for specification " if spec==SOURCE_TEST_PROFILE else "Exact disposable file content verified for specification ")+digest,
+        "Disposable workspace contains only the authorized deliverable",
+    ]
 
 
 def validate_binding(config, request):
@@ -53,7 +64,7 @@ def validate_binding(config, request):
     if context["delivery_spec_digest"] != digest_value(spec) or context["prerequisite_node_id"] != spec["prerequisite_id"]:
         raise ValueError("configured delivery specification mismatch")
     authorize_delivery_review(load_model_routing(Path(__file__).resolve().parents[1] / "architecture/model-routing.yaml"),
-                              config_effective_identity(author), config_effective_identity(reviewer))
+                              config_effective_identity(author), config_effective_identity(reviewer), profile=spec["profile"])
 
 
 def write_once(path: Path, data: bytes):
@@ -121,10 +132,10 @@ class BoundedDeliveryAdapter:
 
     def _request(self, request):
         handoff = request.metadata.get("handoff_request")
-        if not isinstance(handoff, dict) or validate_request(handoff) != DISPOSABLE_FILE_CONTRACT:
+        if not isinstance(handoff, dict) or validate_request(handoff) != DELIVERY_CONTRACTS[self.spec["profile"]]:
             raise ValueError("bounded delivery requires Horizon handoff")
         context = handoff.get("handoff_context", {})
-        if (context.get("delivery_profile") != DISPOSABLE_DELIVERY_PROFILE
+        if (context.get("delivery_profile") != self.spec["profile"]
                 or context.get("delivery_spec_digest") != digest_value(self.spec)
                 or context.get("prerequisite_node_id") != self.spec["prerequisite_id"]
                 or request.run_id != handoff["run_id"] or request.task_id != handoff["provider_task_id"]):
@@ -136,7 +147,12 @@ class BoundedDeliveryAdapter:
         path = root / self.spec["filename"]
         if any(p.is_symlink() for p in (path, *path.parents)) or not path.is_file() or path.stat().st_nlink != 1:
             raise ValueError("delivery file missing or aliased")
-        if path.stat().st_size > 1024 or path.read_bytes() != self.spec["content"].encode():
+        if self.spec["profile"]==SOURCE_TEST_PROFILE:
+            if path.stat().st_size>4096:
+                raise ValueError("source recipe size exceeded")
+            from source_test_recipe import test_source
+            test_source(path.read_text(),self.spec)
+        elif path.stat().st_size > 1024 or path.read_bytes() != self.spec["content"].encode():
             raise ValueError("delivery file failed exact-content acceptance")
         return path
 
@@ -159,14 +175,14 @@ class BoundedDeliveryAdapter:
         self._budget = min(600.0, request.timeout)
         role = Path(request.artifact_dir)
         write_once(role / "delivery-intent.json", canonical_json({
-            "profile": DISPOSABLE_DELIVERY_PROFILE, "request_digest": handoff["request_digest"],
+            "profile": self.spec["profile"], "request_digest": handoff["request_digest"],
             "spec_digest": digest_value(self.spec), "attempt_id": request.attempt_id,
             "max_model_calls": 2, "automatic_retries": 0,
         }))
         prompt = ("Create exactly one UTF-8 file in this disposable workspace. Do not run shell commands, "
                   "read other paths, use network tools, create other files, or invoke controllers. "
                   "Use the file edit tool only. No retries or remediation. Do not self-review.\n"
-                  + json.dumps({"filename": self.spec["filename"], "content": self.spec["content"]})
+                  + json.dumps(self.spec)
                   + '\nThen return a JSON object {"disposition":"IMPLEMENTED"}.')
         result = self.executor.execute(replace(request, prompt=prompt, timeout=min(request.timeout, self.remaining_seconds())))
         if (result.adapter_id != self.adapter_id or config_effective_identity({"provider": result.provider, "model": result.model})
@@ -181,14 +197,17 @@ class BoundedDeliveryAdapter:
         # Deterministic acceptance evidence is the reviewer input, not a model's
         # assertion that tests passed. Retain inner stdout/stderr separately.
         report = {
-            "profile": DISPOSABLE_DELIVERY_PROFILE, "request_digest": handoff["request_digest"],
+            "profile": self.spec["profile"], "request_digest": handoff["request_digest"],
             "spec_digest": digest_value(self.spec), "filename": source.name,
             "content": source.read_text(), "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
             "acceptance_criteria": request.metadata["acceptance_criteria"],
-            "exact_content_verified": True,
+            "exact_content_verified": self.spec["profile"]==DISPOSABLE_DELIVERY_PROFILE,
             "author": {"provider": result.provider, "model": result.model},
             "implementation_stdout_sha256": result.stdout_sha256,
         }
+        if self.spec["profile"]==SOURCE_TEST_PROFILE:
+            from source_test_recipe import test_source
+            report["recipe_result"]=test_source(source.read_text(),self.spec)
         raw = canonical_json(report)
         write_once(role / "delivery-acceptance.json", raw)
         return replace(result, kind=self.kind, stdout_artifact_path="delivery-acceptance.json",
@@ -201,8 +220,9 @@ class BoundedDeliveryAdapter:
         source = self._check_file(cwd)
         return {"name": "deliverable", "filename": source.name,
                 "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-                "observed_content": source.read_text(), "expected_content": self.spec["content"],
-                "spec_digest": digest_value(self.spec), "profile": DISPOSABLE_DELIVERY_PROFILE}
+                "observed_content": source.read_text(), "expected_content": self.spec.get("content"),
+                "specification":self.spec,
+                "spec_digest": digest_value(self.spec), "profile": self.spec["profile"]}
 
     def finalize_delivery(self, request, execution, review, routing_record):
         """Called only after worker's evidence-bound verdict gate approves."""
@@ -228,7 +248,7 @@ class BoundedDeliveryAdapter:
         if report["source_sha256"] != hashlib.sha256(source.read_bytes()).hexdigest():
             raise ValueError("reviewed source changed")
         write_once(root / "acceptance.json", report_bytes)
-        history = {"profile": DISPOSABLE_DELIVERY_PROFILE, "request_digest": handoff["request_digest"],
+        history = {"profile": self.spec["profile"], "request_digest": handoff["request_digest"],
                    "spec_digest": digest_value(self.spec), "author": report["author"],
                    "review": {**routing_record, "verdict": "approve", "adapter_id": review.adapter_id,
                               "stdout_sha256": review.stdout_sha256, "result": review.structured_payload},
@@ -244,7 +264,7 @@ class BoundedDeliveryAdapter:
             "schema_version": "gateway-subworkflow-product.v1", "product_contract": handoff["product_contract"],
             "handoff_id": handoff["handoff_id"], "parent_run_id": handoff["run_id"],
             "parent_task_id": handoff["parent_task_id"], "provider_run_id": handoff["run_id"],
-            "disposition": DISPOSABLE_FILE_CONTRACT.success_disposition,
+            "disposition": DELIVERY_CONTRACTS[self.spec["profile"]].success_disposition,
             "target_identity": {"repository": "GinterVonHelsig/horizon", "scope": "isolated-worktree"},
             "capability": {"prerequisite_id": self.spec["prerequisite_id"], "exact_file_verified": True,
                            "general_test_suite_run": False, "validation_kind": "exact-content-comparison",
@@ -255,6 +275,9 @@ class BoundedDeliveryAdapter:
             "artifacts": artifacts, "rollback": {"status": "available", "artifact_path": "rollback.txt"},
             "bounded_error": None, "status": "completed",
         }
+        if self.spec["profile"]==SOURCE_TEST_PROFILE:
+            product["capability"]={"prerequisite_id":self.spec["prerequisite_id"],"recipe_tests_passed":True,
+                "general_test_suite_run":False,"validation_kind":self.spec["recipe"],"capability_sha256":artifacts[0]["sha256"]}
         path = root / "handoff-product.json"
         write_once(path, canonical_json(product))
         validate_product(path, handoff, root)

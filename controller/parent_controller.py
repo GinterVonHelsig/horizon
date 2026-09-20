@@ -181,6 +181,37 @@ class ParentController:
             raise ValueError("durable submission requires explicit executor and auditor routes")
         self._validate_routes(routing.executor_adapter, routing.auditor_adapter)
 
+    def bind_goal_graph(self, run_id, spec):
+        from goal_completion import bind_graph
+        bind_graph(self, run_id, spec)
+
+    def validate_goal_graph(self, spec):
+        from goal_completion import validate_graph
+        from bounded_delivery import validate_binding
+        validate_graph(spec)
+        for node in spec["workstreams"]:
+            for prerequisite in node.get("prerequisites",[]):
+                from subworkflow_handoff import digest_value
+                request=build_handoff_request(run_id=spec["run_id"],parent_task_id=node["task_id"],
+                    parent_attempt_id="admission-only",failure_code=HORIZON_PREREQ_FAILURE,
+                    request_artifact_root="admission-only",handoff_context={
+                        "delivery_profile":prerequisite["profile"],"delivery_spec_digest":digest_value(prerequisite),
+                        "prerequisite_node_id":prerequisite["prerequisite_id"]})
+                config=self._validate_routes(request["executor_adapter"],request["auditor_adapter"])
+                validate_binding(config,request)
+
+    def reconcile_goal_graph(self, run_id):
+        from goal_completion import reconcile
+        return reconcile(self, run_id)
+
+    def prepare_prerequisites(self, task, context):
+        from goal_completion import prepare_prerequisites
+        return prepare_prerequisites(self, task, context)
+
+    def durable_goal_status(self, run_id):
+        from goal_completion import status
+        return status(self, run_id)
+
     def _validate_routes(self, executor: str, auditor: str) -> dict:
         from harness_adapters.registry import load_registry_config, validate_task_routes
         config = self.adapter_config
@@ -220,8 +251,8 @@ class ParentController:
         Reuse the existing fenced expiry transition to revoke the handoff. The
         last_error distinguishes terminal failure from elapsed-time expiration.
         """
-        from subworkflow_handoff import validate_request, DISPOSABLE_FILE_CONTRACT
-        if validate_request(request) != DISPOSABLE_FILE_CONTRACT:
+        from subworkflow_handoff import validate_request, DELIVERY_CONTRACTS
+        if validate_request(request) not in DELIVERY_CONTRACTS.values():
             raise ValueError("terminal delivery closure requires bounded profile")
         with self._repo.transaction() as cur:
             cur.execute("SELECT h.request_json, t.state FROM subworkflow_handoffs h JOIN parent_tasks t ON t.task_id=h.provider_task_id AND t.run_id=h.run_id WHERE h.handoff_id=%s AND h.run_id=%s", (request["handoff_id"], request["run_id"]))
@@ -530,7 +561,12 @@ class ParentController:
         self.emit(run_id, "goal_state_updated", {"state": state})
 
     def goal_state(self, run_id: str) -> str:
-        return self._goal_state_store.read(run_id)
+        stored=self._goal_state_store.read(run_id)
+        if self._goal_state_store.is_paused(run_id):
+            return stored
+        if self.durable_goal_status(run_id)["status"]=="complete":
+            return "COMPLETE"
+        return stored
 
     def claim_next(self, run_id: str, owner: str, *, expected_task_id: str | None = None) -> ParentTask | None:
         if self._goal_state_store.is_paused(run_id):

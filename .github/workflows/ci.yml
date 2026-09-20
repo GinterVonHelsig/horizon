@@ -33,6 +33,7 @@ jobs:
           python3 -m pytest -q -ra --tb=short \
             tests/test_openrouter_budget.py \
             tests/test_model_routing.py \
+            tests/test_external_review_execution.py \
             tests/test_cli_adapters.py \
             tests/test_http_adapters.py \
             tests/test_f2_model_identity.py \
@@ -85,6 +86,8 @@ jobs:
             tests/test_goal_submitter.py \
             controller/test_recovery_acceptance.py \
             controller/test_bounded_delivery.py \
+            controller/test_goal_completion.py \
+            controller/test_source_delivery.py \
             controller/test_subworkflow_handoff.py \
             controller/test_subworkflow_handoff_integration.py \
             controller/test_correlation_store_integration.py \
