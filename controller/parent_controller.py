@@ -205,9 +205,37 @@ class ParentController:
             self._repo.expire_subworkflow_handoff(handoff_id=request["handoff_id"], run_id=request["run_id"], controller_epoch=self._ensure_epoch(request["run_id"]), reason="provider_time_budget_exhausted")
             raise ValueError("provider time budget exhausted")
         task = self.task(request["provider_task_id"])
-        if task.attempt > request["max_attempts"]:
+        # parent_tasks.attempt counts retries from zero. The bounded profile
+        # declares total claims, including the initial claim, not retry count.
+        claims = task.attempt + (1 if request.get("handoff_context", {}).get("delivery_profile") else 0)
+        if claims > request["max_attempts"]:
+            if request.get("handoff_context", {}).get("delivery_profile"):
+                self._repo.expire_subworkflow_handoff(handoff_id=request["handoff_id"], run_id=request["run_id"], controller_epoch=self._ensure_epoch(request["run_id"]), reason="provider_attempt_budget_exhausted")
             raise ValueError("provider attempt budget exhausted")
         return float(request["timeout_seconds"]) - float(row["age"])
+
+    def close_failed_delivery(self, request: dict, reason: str = "provider_failed") -> None:
+        """Close a failed bounded child; never leave its parent waiting on pending work.
+
+        Reuse the existing fenced expiry transition to revoke the handoff. The
+        last_error distinguishes terminal failure from elapsed-time expiration.
+        """
+        from subworkflow_handoff import validate_request, DISPOSABLE_FILE_CONTRACT
+        if validate_request(request) != DISPOSABLE_FILE_CONTRACT:
+            raise ValueError("terminal delivery closure requires bounded profile")
+        with self._repo.transaction() as cur:
+            cur.execute("SELECT h.request_json, t.state FROM subworkflow_handoffs h JOIN parent_tasks t ON t.task_id=h.provider_task_id AND t.run_id=h.run_id WHERE h.handoff_id=%s AND h.run_id=%s", (request["handoff_id"], request["run_id"]))
+            row = cur.fetchone()
+        if row is None or row["request_json"] != request:
+            raise ValueError("terminal delivery closure binding mismatch")
+        if row["state"] not in {"blocked", "parked"}:
+            return
+        allowed = {"auditor_reject", "configuration_failure", "child_crash", "test_failure", "integrity_failure", "execution_outcome_requires_review"}
+        code = reason.split(":", 1)[0]
+        if code not in allowed:
+            code = "provider_failed"
+        self._repo.expire_subworkflow_handoff(handoff_id=request["handoff_id"], run_id=request["run_id"], controller_epoch=self._ensure_epoch(request["run_id"]), reason="provider_terminal_failure:" + code)
+        self.emit(request["run_id"], "subworkflow_provider_failed", {"handoff_id": request["handoff_id"], "reason": code})
 
     def start_or_preserve_run(self, run_id: str, state: str = "active") -> str:
         try:

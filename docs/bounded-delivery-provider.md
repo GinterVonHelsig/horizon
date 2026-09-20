@@ -61,6 +61,12 @@ Two claims permit a bounded pre-intent reclaim, not two implementation calls.
 The 600-second deadline is measured from durable handoff creation, not worker
 start; remaining time is passed to each call and checked again before review,
 product publication and completion. An uncertain effect requires reconciliation.
+The stored attempt counter is zero-based; the budget includes the initial claim.
+A further reclaimed lease is blocked before any model execution. Permanent child
+failure closes the handoff using the existing fenced `expired` transition, with
+`provider_terminal_failure:<reason>` distinguishing revocation from elapsed-time
+expiry. The parent remains parked. Reserved evidence filename `rollback.txt` is
+rejected at admission, not after a model has already created it.
 
 ## Independent review and qualification record
 

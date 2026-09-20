@@ -31,6 +31,8 @@ def validate_spec(spec):
         raise ValueError("invalid prerequisite identity")
     if not isinstance(spec["filename"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,60}\.txt", spec["filename"]):
         raise ValueError("profile permits one plain text filename only")
+    if spec["filename"] == "rollback.txt":
+        raise ValueError("delivery filename is reserved for provider evidence")
     if not isinstance(spec["content"], str) or not 1 <= len(spec["content"].encode()) <= 1024 or contains_credential(spec):
         raise ValueError("delivery content must be small and non-sensitive")
     return spec

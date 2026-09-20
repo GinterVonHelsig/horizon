@@ -141,6 +141,12 @@ def test_terminal_failure_never_publishes_or_replays(scenario, artifact_root, re
     result = worker.run_once("disposable-provider", "simulated", expected_task_id=handoff["provider_task_id"])
     assert result.terminal_state.startswith("blocked")
     assert parent.task(handoff["provider_task_id"]).state == "blocked"
+    with parent._repo.transaction() as cur:
+        cur.execute("SELECT state, last_error FROM subworkflow_handoffs WHERE handoff_id=%s", (handoff["handoff_id"],))
+        row = cur.fetchone()
+        assert row["state"] == "expired"
+        assert row["last_error"].startswith("provider_terminal_failure:")
+    assert parent.task("parent").state == "parked"
     assert not list(artifact_root.rglob("handoff-product.json"))
     restarted, new_author, new_review = make_worker(scenario, artifact_root)
     assert restarted.run_once("disposable-provider", "restart") is None
@@ -181,7 +187,7 @@ def test_profile_routes_are_explicit_and_legacy_unchanged():
         validate_task_routes(config, "gateway-delivery-disposable-file", "openrouter-independent-review")
 
 
-@pytest.mark.parametrize("field,value", [("filename", "../escape.txt"), ("profile", "full-release"), ("content", "")])
+@pytest.mark.parametrize("field,value", [("filename", "../escape.txt"), ("filename", "rollback.txt"), ("profile", "full-release"), ("content", "")])
 def test_unsupported_spec_is_rejected(field, value):
     spec = configuration()["adapters"][0]["delivery_spec"]
     spec[field] = value
@@ -332,3 +338,18 @@ def test_bounded_registry_can_coexist_with_legacy_routes():
     config["adapters"].extend(legacy["adapters"])
     validate_task_routes(config, "gateway-delivery-disposable-file", "cursor-independent-review")
     validate_task_routes(config, "gateway-delivery", "openrouter-independent-review")
+
+
+def test_two_total_claims_do_not_mean_two_retries(scenario, artifact_root, db_url):
+    parent, _, _, handoff = scenario
+    for _ in range(2):
+        proc = multiprocessing.get_context("spawn").Process(target=_killed_provider, args=(db_url, artifact_root, handoff, False))
+        proc.start()
+        proc.join(10)
+        assert proc.exitcode == -signal.SIGKILL
+        time.sleep(2.05)
+    worker, author, review = make_worker(scenario, artifact_root)
+    result = worker.run_once("disposable-provider", "third-claim")
+    assert result.terminal_state.startswith("blocked")
+    assert author.calls == review.calls == 0
+    assert parent.task("parent").state == "parked"

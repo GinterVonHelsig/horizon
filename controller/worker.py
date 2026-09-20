@@ -356,6 +356,7 @@ class TaskWorker:
                             task, generation, f"configuration_failure:{type(exc).__name__}", context=context,
                         )
                     cleanup_done = True
+                    context["delivery_completed"] = True
                     self._release_writing_lease(writing_lease_owner)
                     writing_lease_owner = None
                     return WorkerRunResult(task.task_id, "handoff_completed")
@@ -365,6 +366,7 @@ class TaskWorker:
                 self._complete_verified(run_id, task.task_id, generation)
                 return WorkerRunResult(task.task_id, "verified")
             if verdict == "reject":
+                context["delivery_terminal_reason"] = "auditor_reject"
                 self._controller.complete_task(run_id, task.task_id, generation, "blocked")
                 return WorkerRunResult(task.task_id, "blocked:auditor_reject")
             if self._execution_succeeded(auditor_result):
@@ -380,7 +382,11 @@ class TaskWorker:
             raise
         finally:
             try:
-                self._release_writing_lease(writing_lease_owner)
+                try:
+                    if context and context.get("delivery_profile") and not context.get("delivery_completed"):
+                        self._controller.close_failed_delivery(context["handoff_request"], context.get("delivery_terminal_reason", "provider_failed"))
+                finally:
+                    self._release_writing_lease(writing_lease_owner)
             finally:
                 with self._active_lock:
                     self._active_adapter = None
@@ -437,6 +443,8 @@ class TaskWorker:
         *,
         context: dict[str, Any] | None = None,
     ) -> WorkerRunResult:
+        if context and context.get("delivery_profile"):
+            context["delivery_terminal_reason"] = reason
         goal = self._goal_for_run(task.run_id)
         snapshot = self._task_snapshot(task, context)
         decision = self._goal_runner.handle_task_failure(goal, snapshot, reason)
