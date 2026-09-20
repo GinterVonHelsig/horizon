@@ -859,7 +859,7 @@ def main(argv: list[str] | None = None) -> int:
         args.out.write_text(text)
     else:
         print(text)
-    return 0 if result.status == "ok" else 2
+    return 0 if result.status == "ok" and result.verdict in {"approve", "approve-with-minors"} else 2
 
 
 if __name__ == "__main__":

@@ -63,5 +63,8 @@ Transport request/run correlation is not wired end-to-end; authentication/grant
 references and durable replay/conflict handling still need integration. The new
 bounded delivery provider does not implement them. The external installed review
 launcher remains untouched; the provider's own executable worker path now owns
-its explicit author-aware Cursor review. Generic external workflow selector/history
-integration remains separate and must not be represented as repaired by this path.
+its explicit author-aware Cursor review. The external source-owned launcher now
+integrates the shared selector/history and has a relocatable package with simulated
+entry-point tests; see [reviewer-release-package.md](reviewer-release-package.md).
+Installed launcher and consumer cutover remain deferred deployment, not an
+unfinished selector source fix.

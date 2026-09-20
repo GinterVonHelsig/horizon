@@ -1,0 +1,8 @@
+{
+  "schema": "horizon-review-consumer.v1",
+  "enabled": false,
+  "cursor_executable": "/opt/operator-harness/bin/cursor",
+  "cursor_sha256": "REPLACE_WITH_APPROVED_EXECUTABLE_SHA256",
+  "routing_yaml": "../../architecture/model-routing.yaml",
+  "routing_sha256": "REPLACE_WITH_APPROVED_ROUTING_SHA256"
+}

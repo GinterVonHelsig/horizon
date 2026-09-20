@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install focused unit dependencies
-        run: python3 -m pip install pytest pyyaml cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
+        run: python3 -m pip install pytest pyyaml==6.0.2 cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
       - name: Run host-safe unit tests
         env:
           PYTHONPATH: controller
@@ -34,6 +34,7 @@ jobs:
             tests/test_openrouter_budget.py \
             tests/test_model_routing.py \
             tests/test_external_review_execution.py \
+            tests/test_review_release_package.py \
             tests/test_cli_adapters.py \
             tests/test_http_adapters.py \
             tests/test_f2_model_identity.py \
@@ -62,7 +63,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python3 -m pip install pytest pyyaml cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
+      - run: python3 -m pip install pytest pyyaml==6.0.2 cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
       - name: Prepare isolated test prerequisites on disposable CI host
         run: |
           sudo apt-get update -qq

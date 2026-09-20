@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from dataclasses import replace
-from model_routing import RoutingRecord, resolve_phase_route
+from model_routing import REVIEW_PHASES, RoutingRecord, resolve_phase_route
 
 
 def _artifact(root, ref):
@@ -21,6 +21,8 @@ def _artifact(root, ref):
 
 
 def select_review(routing,seat,context,root,run_id):
+    if seat not in REVIEW_PHASES:
+        raise ValueError('external reviewer requires an independent review seat')
     root=Path(root).resolve()
     if context.get("run_id")!=run_id or context.get("max_calls")!=1 or context.get("fallback_calls")!=0:
         raise ValueError("one-call bound review context required")

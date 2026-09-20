@@ -94,7 +94,10 @@ historical-upgrade-tests.md for exact hashes, archived provenance and reproducti
 Both standalone017 and full016→021 upgrades are exercised with populated synthetic
 state. The maintained014 placeholder still refuses fresh replay, proved by an
 explicit negative test. Reconstructed-source evidence is not qualification of the
-uninspected production schema/data. Do not stamp past the guard, replace installed
+production data or an actual production migration. A later read-only catalog
+assessment found installed020 definitions matching reconstructed020 except the
+source-supported optional topdelivery sequence grant; see recovery-activation.md.
+Do not stamp past the guard, replace installed
 historical pins or deploy the test-only runner. Production compatibility remains
 an activation blocker; no additional baseline information is requested.
 
@@ -108,9 +111,12 @@ not direct table writes. No migration has run against a live database.
 
 Before a separately authorized activation: review the exact code/schema/config
 manifest, stage an immutable release, provision its reviewed source-anchor entries,
-rehearse the exact live-stack migration on a disposable clone, configure explicit
-supported routes and keep controller services inactive until acceptance. Installed
-submission-path and review-launcher packaging corrections remain deferred. Do not
+rehearse the exact live-stack migration on a source-reconstructed disposable
+database (not a production-data clone), configure explicit supported routes and
+keep controller services inactive until acceptance. Installed submission-path and
+review-launcher deployment corrections remain deferred. The reviewer package now
+exists with relocated simulated CLI/consumer tests; the submission transport
+package is a separate remaining preparation item. Do not
 retarget current as part of this source repair.
 
 Rollback code/config/launcher packaging as a unit to the captured previous pin;
@@ -145,7 +151,15 @@ paused/failed/active run rows, a queued task and controller owner/epoch/fence is
 preserved across both upgrade paths. Failed is NOT stopped. These cases and the
 original host-store-escape regression are now maintained CI tests; privileged
 fixtures fail closed without verified private storage and PostgreSQL. Production
-schema compatibility and new-tip live integration are still unverified.
+data-dependent migration compatibility and new-tip live integration are still
+unverified; the read-only020 catalog comparison is narrower evidence.
+
+Release-packaging acceptance: explicit cursor-independent-review entry point and
+legacy argv shim run after relocation, without checkout/PYTHONPATH imports, with
+pinned consumer config and simulated Cursor processes. Rejected reviews exit
+nonzero; no replay across either command. These are required CI tests, not fresh
+independent review or live qualification. Python/PyYAML runtime provisioning and
+installed consumer cutover remain operator deployment work.
 
 Required/expanded suite counts and exact reviewed/tested SHA belong in the PR
 evidence for the final candidate, not a self-referential source commit. All model

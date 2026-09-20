@@ -20,9 +20,14 @@ The unchanged installed source and Git history preserve comparison provenance.
 Observed stream-init identity is retained in result/history, not replaced with
 the requested alias. The --user-file bytes must match the bound subject digest.
 
-Future deployment: package this exact reviewed module and controller dependencies,
-add an explicitly Cursor-named command and compatibility shim that forwards the
-required context; stage/test before installing. Do not replace installed sources
-or change consumers during this repair. Roll back package/shim/config together;
-retain review history and no-replay markers. No service restart is needed for
-source review. This is not unified Comms Relay.
+Release preparation now provides package.py, an explicit cursor-independent-review
+entry point and an openrouter-review argv-compatibility shim. Both use the same
+guarded runtime with explicit pinned consumer configuration; the shim does not
+translate provider names. Relocated subprocess tests exercise both entries using
+a fake pinned Cursor executable. See docs/reviewer-release-package.md. Python and
+pinned PyYAML are explicit runtime prerequisites, not development-checkout imports.
+Installation and actual consumer cutover remain deferred. Do not replace installed
+sources or change consumers during this repair. Roll back package/shim/config and
+runtime together; retain review history and no-replay markers. Review rejection
+now exits nonzero even when the transport itself completed. No service restart is
+needed for source review. This is not unified Comms Relay.
