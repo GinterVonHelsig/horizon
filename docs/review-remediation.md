@@ -70,6 +70,34 @@ both generated and static units must preserve exit 78 and the private health pat
 
 ## Remaining gates
 
+The fresh independent Cursor/Grok review of
+`3645f4f663b65bf85d17c335fbd4fb99b653397e` approved the four original fixes for the
+claimed Horizon scope, but identified **HR-PREFLIGHT-UNCAUGHT**. A separate local
+diagnostic independently reproduced that exception escaping the CLI. This pass
+also fixes it: a rejected selected-route preflight finishes any claimed task as
+blocked; WorkerLoop persists a permanent `adapter_preflight` health block; CLI
+returns 78. Regression tests inject rejection before claim, after claim and
+before auditor, then restart against the same health store. No retry, second
+effect, private remote response in persisted state, or leaked active lease is
+accepted. Clearing the health block remains an explicit recovery acknowledgment.
+
+Other review observations remain distinguished from these confirmed repairs:
+batch routing is a planning API, not an adversarial execution chain, and must
+not fabricate completed history. Generic caller-supplied routing records remain
+a provenance obligation for the missing external consumer. The reported VM9201
+provenance asymmetry is real (no explicit full request-digest echo), but is not
+absence of request binding: `build_handoff_request` derives its handoff ID from
+the immutable request digest and `validate_product` requires that exact ID.
+Full digest/scope echo parity is defense-in-depth, not permission to invent VM
+evidence for Horizon. The generic `permission_or_ownership` reason covers lease
+and queue authorization failures without claiming every case is a filesystem
+denial; more granular classification remains diagnostic debt. No spending cap
+is inferred from estimated token costs, and expired handoffs never become success.
+
+The PostgreSQL17 two-cluster spoofed-port/search-path test subsequently passed
+on the exact 3645f4f source with `P43_DISPOSABLE_PG=1` inside the disposable
+namespace. It was supplementary to that review's intake, not reviewer-run proof.
+
 - Missing `gateway-delivery` and `openrouter-independent-review` executable
   bindings; installed skill identity alone is not an executable implementation.
 - External launcher's selector/history integration, including passing prior
@@ -77,9 +105,9 @@ both generated and static units must preserve exit 78 and the private health pat
 - No tiny live file-creation/independent-review integration has been demonstrated.
   Cursor/Grok subscription code review is independent review, not Gateway
   validation. No OpenRouter calls or metered overages are authorized in this pass.
-- The explicit PostgreSQL two-cluster spoofed-port/search-path rehearsal remains
-  skipped unless its separate disposable prerequisites are satisfied. Test
-  evidence must name skips; deterministic adapter success is not live proof.
+- Hosted privilege-dependent checks still skip where prerequisites are absent;
+  local root-owned-source tests and the explicit two-cluster rehearsal cover
+  those checks. Test evidence must name skips; simulated success is not live proof.
 
 Production activation remains prohibited. Comms-01's
 `top-delivery-controller.service` stays inactive; `top-delivery-worker.service`

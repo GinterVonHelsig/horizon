@@ -31,10 +31,10 @@ executors. Review selection now requires actual author records and an explicit
 qualified availability inventory. Missing history, unknown model family,
 missing availability, disabled seats, uninvoked optional seats and exhausted
 eligible routes raise `IndependentReviewBlocked`. Phase 1.6 additionally requires
-the preceding phase 1.5 review identity. Callers must supply all actual authors
+exactly one preceding phase 1.5 review identity with a passing verdict. Callers must supply all actual authors
 (including specification and code authors), not infer them from planned routes.
-Callers remain responsible for durable history provenance and passing verdicts;
-`review_sequence_allows_next` continues to reject failed prior reviews.
+Callers remain responsible for durable history provenance; the selector itself
+now calls `review_sequence_allows_next` and rejects failed or missing verdicts.
 
 The existing independent-family requirement is applied conservatively to known
 upstream families: Sol, Astra and Luna are OpenAI, regardless of transport or

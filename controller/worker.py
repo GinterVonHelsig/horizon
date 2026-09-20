@@ -358,6 +358,12 @@ class TaskWorker:
                     task, generation, "test_failure:malformed_structured_output", context=context,
                 )
             return self._handle_adapter_failure(task, generation, auditor_result, "auditor", context=context)
+        except AdapterPreflightError:
+            # Selected task routes can differ from the defaults checked before
+            # claim. Finalize this lease, then let the poll breaker persist the
+            # configuration block and require an explicit recovery transition.
+            self._controller.complete_task(run_id, task.task_id, generation, "blocked")
+            raise
         finally:
             try:
                 self._release_writing_lease(writing_lease_owner)
@@ -975,6 +981,11 @@ class WorkerLoop:
                     result = self._worker.run_once(self._run_id, self._owner, **options)
                 else:
                     result = self._worker.run_once_available(self._owner)
+            except AdapterPreflightError:
+                self.last_status = "blocked:adapter_preflight"
+                if self.health is not None:
+                    self.health.fail(scope, reason="adapter_preflight", permanent=True)
+                return False
             except PermissionError as exc:
                 self._permission_error_seen = True
                 self._log_permission_error(exc)

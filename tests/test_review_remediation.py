@@ -136,3 +136,73 @@ def test_production_cli_always_supplies_policy_and_preflight_config(tmp_path, mo
     assert captured["routing_policy"]["version"] == 3
     assert captured["routing_policy"]["month"] == "2026-09"
     assert captured["adapter_config"] is config
+
+
+@pytest.mark.parametrize("boundary", ["before_claim", "after_claim", "before_auditor"])
+def test_preflight_block_survives_restart_and_finalizes_claim(artifact_root, tmp_path, monkeypatch, boundary):
+    from worker import WorkerLoop
+    from worker_health import WorkerHealth
+    from harness_adapters.preflight import AdapterPreflightError
+    import worker as worker_module
+    controller = FakeController()
+    controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
+    executor = ScriptedAdapter("executor", [replace(_success_payload(), adapter_id="executor", provider="cursor", model="composer-latest")])
+    executor.provider, executor.model = "cursor", "composer-latest"
+    auditor = ScriptedAdapter("auditor", [])
+    auditor.provider, auditor.model = "openai", "gpt-6-astra"
+    calls = []
+    failure_call = {"before_claim": 1, "after_claim": 2, "before_auditor": 3}[boundary]
+    def rejected(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == failure_call:
+            raise AdapterPreflightError("sensitive catalog detail must not be persisted")
+    monkeypatch.setattr(worker_module, "preflight_adapters", rejected)
+    policy = load_model_routing(ROOT / "architecture/model-routing.yaml")
+    for _ in range(2):
+        worker = TaskWorker(controller, artifact_root, {"executor": executor, "auditor": auditor},
+                            routing_policy=policy, adapter_config={})
+        health = WorkerHealth(tmp_path / "health")
+        loop = WorkerLoop(worker, run_id="run-1", owner="simulated", health=health)
+        assert not loop.run()
+        assert loop.last_status == "blocked:adapter_preflight"
+    assert health.state("run-1")["blocked"] == 1
+    assert "sensitive" not in str(health.state("run-1"))
+    assert len(calls) == failure_call
+    assert auditor.calls == 0
+    assert executor.calls == int(boundary == "before_auditor")
+    assert controller.tasks["task-1"].state == ("scheduled" if boundary == "before_claim" else "blocked")
+    assert len(controller.cleanups) == int(boundary != "before_claim")
+    assert not controller.retries
+
+
+def test_cli_preflight_error_is_terminal_78(monkeypatch):
+    from harness_adapters.preflight import AdapterPreflightError
+    import worker_cli
+    def unavailable(*args):
+        raise AdapterPreflightError("sanitized configuration rejection")
+    monkeypatch.setattr(worker_cli, "_main", unavailable)
+    assert worker_cli.main([]) == 78
+
+
+def test_real_cli_persists_preflight_block_before_restart(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from harness_adapters.preflight import AdapterPreflightError
+    from worker_health import WorkerHealth
+    import worker_cli
+    calls = []
+    def unavailable(*args, **kwargs):
+        calls.append(1)
+        raise AdapterPreflightError("do not persist remote response")
+    monkeypatch.setattr(worker_cli, "load_relay_token", lambda: None)
+    monkeypatch.setattr(worker_cli, "load_registry_config", lambda *a, **k: {})
+    monkeypatch.setattr(worker_cli.AdapterRegistry, "from_config", lambda *a, **k: SimpleNamespace(adapters={}, default_executor="e", default_auditor="a"))
+    monkeypatch.setattr(worker_cli, "build_controller", lambda *a: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(worker_cli, "TaskWorker", lambda *a, **k: SimpleNamespace(run_once=unavailable, cancel_active=lambda: None))
+    args = ["--run-id", "disposable", "--artifact-root", str(tmp_path), "--health-dir", str(tmp_path / "health"), "--config", "unused", "--db-url", "unused"]
+    assert worker_cli.main(args) == 78
+    assert worker_cli.main(args) == 78
+    assert len(calls) == 1
+    health = WorkerHealth(tmp_path / "health")
+    assert health.state("disposable")["reason"] == "adapter_preflight"
+    health.recover("disposable", "adapter_configuration_repaired")
+    assert health.state("disposable")["blocked"] == 0

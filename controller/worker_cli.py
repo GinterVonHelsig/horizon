@@ -10,6 +10,7 @@ from pathlib import Path
 
 from artifact_isolation import load_relay_token
 from harness_adapters.registry import AdapterRegistry, load_registry_config
+from harness_adapters.preflight import AdapterPreflightError
 from openrouter_budget import BudgetLimits, OpenRouterBudgetGuard
 from worktree_transport import WorktreeTransport
 from worker import TaskWorker, WorkerLoop
@@ -124,7 +125,7 @@ def _main(argv: list[str] | None = None) -> int:
 def main(argv: list[str] | None = None) -> int:
     try:
         return _main(argv)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, AdapterPreflightError) as exc:
         # Config/health-store failures must also stop systemd restart polling.
         # Exception messages can include credentials, paths, or request bodies.
         print(json.dumps({"status": "blocked", "reason": "worker_configuration_or_filesystem", "exception_type": type(exc).__name__}))
