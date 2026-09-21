@@ -118,7 +118,10 @@ def save(path, value):
 
 
 def load_config(path, authorize_live=False):
-    config=json.loads(trusted(path).read_text())
+    try:
+        config=json.loads(trusted(path).read_text())
+    except ValueError as error:
+        raise ValueError('config: '+str(error)) from error
     required={'schema','execution','socket','socket_root','state_root','workspace_root','runtime_root',
               'runtime_entry','runtime_files','auth_file','subscription_only','on_demand_disabled'}
     if set(config)!=required or config['schema']!='horizon-qualification.v1':
@@ -138,8 +141,14 @@ def load_config(path, authorize_live=False):
     if config['subscription_only'] is not True or config['on_demand_disabled'] is not True:
         raise ValueError('included subscription authorization required')
     for name in ('socket_root','state_root','workspace_root','runtime_root'):
-        trusted(config[name],directory=True)
-    trusted(config['auth_file'])
+        try:
+            trusted(config[name],directory=True)
+        except ValueError as error:
+            raise ValueError(name+': '+str(error)) from error
+    try:
+        trusted(config['auth_file'])
+    except ValueError as error:
+        raise ValueError('auth_file: '+str(error)) from error
     workspace=Path(config['workspace_root'])
     for name in ('socket_root','state_root','runtime_root','auth_file'):
         protected=Path(config[name])
