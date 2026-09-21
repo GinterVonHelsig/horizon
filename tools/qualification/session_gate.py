@@ -22,6 +22,7 @@ import time
 MODELS = ['composer-2.5','cursor-grok-4.6-high','composer-2.5','cursor-grok-4.6-high','cursor-grok-4.6-high']
 LIMITS = [300,300,300,300,900]
 MAX_BYTES = 2*1024*1024
+SUN_PATH_BYTES = 108  # Linux sockaddr_un.sun_path, including the terminating NUL.
 
 
 def trusted(path, directory=False):
@@ -45,6 +46,15 @@ def inventory_digest(files):
     return digest(json.dumps(files,sort_keys=True,separators=(',',':')).encode())
 
 
+def validate_socket_path(path):
+    """Reject a pathname AF_UNIX address before a ledger or process is created."""
+    path=Path(path)
+    encoded=os.fsencode(str(path))
+    if b'\0' in encoded or len(encoded)>=SUN_PATH_BYTES:
+        raise ValueError('qualification Unix socket path exceeds Linux sockaddr_un limit')
+    return path
+
+
 def validate_prepared(path, expected, config_path):
     raw=trusted(path).read_bytes()
     if digest(raw)!=expected:
@@ -59,6 +69,8 @@ def validate_prepared(path, expected, config_path):
             or prepared.get('gate_sha256')!=digest(config_bytes)
             or config.get('execution')!='cursor-subscription'
             or config.get('auth_file')!=prepared.get('authentication_reference_only')
+            or config.get('socket')!=prepared.get('broker_socket')
+            or len(os.fsencode(config.get('socket','')))!=prepared.get('broker_socket_path_bytes')
             or prepared.get('runtime_inventory_sha256')!=inventory_digest(config.get('runtime_files'))
             or prepared.get('maximum_sessions')!=5
             or prepared.get('automatic_retries')!=0 or prepared.get('fallback_calls')!=0):
@@ -80,7 +92,7 @@ def save(path, value):
 
 def load_config(path, authorize_live=False):
     config=json.loads(trusted(path).read_text())
-    required={'schema','execution','socket','state_root','workspace_root','runtime_root',
+    required={'schema','execution','socket','socket_root','state_root','workspace_root','runtime_root',
               'runtime_entry','runtime_files','auth_file','subscription_only','on_demand_disabled'}
     if set(config)!=required or config['schema']!='horizon-qualification.v1':
         raise ValueError('unsupported qualification configuration')
@@ -98,20 +110,25 @@ def load_config(path, authorize_live=False):
             raise ValueError('simulation requires private disposable stores')
     if config['subscription_only'] is not True or config['on_demand_disabled'] is not True:
         raise ValueError('included subscription authorization required')
-    for name in ('state_root','workspace_root','runtime_root'):
+    for name in ('socket_root','state_root','workspace_root','runtime_root'):
         trusted(config[name],directory=True)
     trusted(config['auth_file'])
     workspace=Path(config['workspace_root'])
-    for name in ('state_root','runtime_root','auth_file'):
+    for name in ('socket_root','state_root','runtime_root','auth_file'):
         protected=Path(config[name])
         if protected.is_relative_to(workspace) or workspace.is_relative_to(protected):
             raise ValueError('workspace must not overlap protected qualification inputs')
-    socket_path=Path(config['socket'])
-    trusted(socket_path.parent,directory=True)
-    if socket_path.parent != Path(config['state_root']) or socket_path.name!='session.sock':
-        raise ValueError('socket must be in private state root')
-    if Path(config['state_root']).stat().st_mode & 0o077:
-        raise ValueError('session state must be private')
+    socket_path=validate_socket_path(config['socket'])
+    socket_root=Path(config['socket_root'])
+    if (socket_path.parent!=socket_root or socket_path.name!='s.sock'
+            or socket_root==Path(config['state_root'])):
+        raise ValueError('socket must be in its separate private runtime root')
+    if config['execution']=='cursor-subscription' and not socket_root.is_relative_to('/run/horizon-q'):
+        raise ValueError('live socket must use the short qualification runtime root')
+    if any(Path(config[name]).stat().st_mode & 0o077 for name in ('socket_root','state_root')):
+        raise ValueError('session state and socket runtime must be private')
+    if socket_path.exists() or socket_path.is_symlink():
+        raise ValueError('qualification socket collision or stale listener evidence')
     if not config['runtime_files'] or config['runtime_entry'] not in config['runtime_files']:
         raise ValueError('pinned runtime required')
     runtime=Path(config['runtime_root'])
@@ -259,12 +276,13 @@ def receive(connection):
 
 
 def serve(config):
-    gate=Gate(config)
-    path=Path(config['socket'])
+    path=validate_socket_path(config['socket'])
     # A stale socket is evidence; an operator may remove ONLY the socket after
     # inspecting sessions.json, never reset the ledger to authorize replay.
     with socket.socket(socket.AF_UNIX) as server:
         server.bind(str(path)); os.chmod(path,0o600); server.listen(4)
+        # Listener admission succeeds before creating or opening a durable ledger.
+        gate=Gate(config)
         try:
             while True:
                 connection,_=server.accept()

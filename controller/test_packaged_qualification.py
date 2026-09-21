@@ -44,10 +44,12 @@ def consumer(tmp_path, built, db_url, qualification_inputs):
     shutil.copyfile(ROOT/'controller/test_only/simulated_cursor_process.py', fake)
     fake.chmod(0o755)
     state=tmp_path/'session-state'; state.mkdir(mode=0o700)
+    socket_root=tmp_path/'session-socket'; socket_root.mkdir(mode=0o700)
     (tmp_path/'auth.json').write_text('{}')
     standalone=tmp_path/'runs/standalone-review'; standalone.mkdir()
     gate_config={'schema':'horizon-qualification.v1','execution':'simulated',
-        'socket':str(state/'session.sock'),'state_root':str(state),'workspace_root':str(tmp_path/'runs'),
+        'socket':str(socket_root/'s.sock'),'socket_root':str(socket_root),
+        'state_root':str(state),'workspace_root':str(tmp_path/'runs'),
         'runtime_root':str(runtime_root),'runtime_entry':'cursor-agent',
         'runtime_files':{'cursor-agent':transport_tests.runtime.digest(fake.read_bytes())},
         'auth_file':str(tmp_path/'auth.json'),'subscription_only':True,'on_demand_disabled':True}
@@ -57,7 +59,7 @@ def consumer(tmp_path, built, db_url, qualification_inputs):
         assert tmp_path.is_relative_to(gate_config['workspace_root'])
     gate_path=tmp_path/'gate.json'; gate_path.write_text(json.dumps(gate_config))
     client=tmp_path/'qualification-client'
-    client.write_text('#!/usr/bin/python3 -I\nimport sys\nsys.path.insert(0,'+repr(str(release/'tools/qualification'))+')\nfrom client import main\nraise SystemExit(main('+repr(str(state/'session.sock'))+','+repr(str(standalone))+'))\n')
+    client.write_text('#!/usr/bin/python3 -I\nimport sys\nsys.path.insert(0,'+repr(str(release/'tools/qualification'))+')\nfrom client import main\nraise SystemExit(main('+repr(str(gate_config['socket']))+','+repr(str(standalone))+'))\n')
     client.chmod(0o755)
     config = json.loads((tmp_path/'adapters.json').read_text())
     author = {k:v for k,v in config['adapters'][0].items() if k not in {'delivery_spec','subscription_only','on_demand_disabled'}}

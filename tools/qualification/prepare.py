@@ -7,9 +7,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from session_gate import inventory_digest
+from session_gate import inventory_digest, validate_socket_path
 
 ROOT=Path(__file__).resolve().parents[2]
+SHORT_SOCKET_BASE=Path('/run/horizon-q')
 
 
 def builder(name):
@@ -56,12 +57,38 @@ def durable_json(path,value):
     finally: os.close(fd)
 
 
+def qualification_socket(output,sha,base=None):
+    """Return a deterministic short runtime address, never an artifact pathname."""
+    base=SHORT_SOCKET_BASE if base is None else Path(base)
+    token=hashlib.sha256((sha+'\0'+str(output)).encode()).hexdigest()[:16]
+    root=base/token
+    return root,validate_socket_path(root/'s.sock')
+
+
+def create_private_socket_root(root):
+    """Atomically reserve a private listener root; never reuse a collision."""
+    root=Path(root); base=root.parent
+    if os.path.lexists(root):
+        raise ValueError('qualification socket runtime collision')
+    if not base.exists():
+        base.mkdir(mode=0o700)
+    if (base.is_symlink() or base.stat().st_uid!=0 or base.stat().st_mode & 0o077
+            or any(p.is_symlink() for p in (base,*base.parents))):
+        raise ValueError('socket runtime base must be private and root controlled')
+    root.mkdir(mode=0o700)
+    if root.stat().st_uid!=0 or root.stat().st_mode & 0o077:
+        raise ValueError('socket runtime root must be private and root controlled')
+
+
 def prepare(output,runtime,auth):
     if os.geteuid()!=0: raise ValueError('private root-controlled staging required')
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     if subprocess.check_output(['git','status','--porcelain'],cwd=ROOT):
         raise ValueError('commit and review the source before live preparation')
     output=output.absolute(); runtime=runtime.absolute(); auth=auth.absolute()
+    socket_root,socket_path=qualification_socket(output,sha)
+    if os.path.lexists(socket_root):
+        raise ValueError('qualification socket runtime collision')
     for path in (output,runtime,auth):
         if any(p.is_symlink() for p in (path,*path.parents)) or '..' in path.parts:
             raise ValueError('canonical staging paths required')
@@ -82,14 +109,17 @@ def prepare(output,runtime,auth):
         raise ValueError('reviewed vendor payload manifest required')
     copied=output/'cursor-runtime'
     files=freeze_public_payload(runtime,copied,manifest)
+    create_private_socket_root(socket_root)
     config={'schema':'horizon-qualification.v1','execution':'cursor-subscription',
-        'socket':str(output/'state/session.sock'),'state_root':str(output/'state'),'workspace_root':str(output/'workspaces'),
+        'socket':str(socket_path),'socket_root':str(socket_root),
+        'state_root':str(output/'state'),'workspace_root':str(output/'workspaces'),
         'runtime_root':str(copied),'runtime_entry':'cursor-agent','runtime_files':files,
         'auth_file':str(auth),'subscription_only':True,'on_demand_disabled':True}
     gate=output/'gate.json'; durable_json(gate,config)
     value={'schema':'horizon-qualification-prepared.v1','status':'NOT_INVOKED','source_commit':sha,'gate_config':str(gate),
         'gate_sha256':hashlib.sha256(gate.read_bytes()).hexdigest(),
         'runtime_inventory_sha256':inventory_digest(files),'excluded_installed_state':['.running/'],
+        'broker_socket':str(socket_path),'broker_socket_path_bytes':len(os.fsencode(str(socket_path))),
         'submission_release':str(submission),'review_release':str(review),'maximum_sessions':5,
         'automatic_retries':0,'fallback_calls':0,'on_demand_disabled_evidence':'operator confirmation',
         'runtime_source':str(runtime),'authentication_reference_only':str(auth)}

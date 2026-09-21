@@ -16,7 +16,7 @@ activated. Task completion is not whole-goal completion.
 | External reviewer package | Relocatable canonical command/legacy argv shim, explicit Cursor transport, pinned configuration, actual identity/history, passing verdicts, no non-review-seat bypass |
 | Submission transport package | Both direct/socket paths, one pinned release/config/journal, peer/prompt checks, bounded dispatch and truthful receipt/exit, safe partial-failure handling |
 | Qualification interfaces | Immutable prerequisite forwarding; explicit Cursor-only parent-review CLI profile with author independence; September default unchanged |
-| Qualification runner | Durable five-session broker, confined subprocesses, timeout/orphan/uncertain-state handling; separate live opt-in not invoked by ordinary CI |
+| Qualification runner | Durable five-session broker, separate short private runtime socket with pre-ledger bind admission, confined subprocesses, timeout/orphan/uncertain-state handling; separate live opt-in not invoked by ordinary CI |
 
 No known source work remains in these **bounded** implementations apart from any
 findings recorded by the fresh exact-commit review. Unknown-effect reconciliation

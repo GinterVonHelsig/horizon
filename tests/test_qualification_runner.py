@@ -3,6 +3,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import signal
+import socket
 import subprocess
 import sys
 import time
@@ -19,7 +21,7 @@ spec.loader.exec_module(gate)
 @pytest.fixture
 def config(tmp_path):
     require_isolation(os.environ.get('TOP_DELIVERY_PG_ADMIN_URL',''))
-    for name in ('state','workspaces','runtime'):
+    for name in ('state','socket','workspaces','runtime'):
         (tmp_path/name).mkdir(mode=0o700)
     (tmp_path/'workspaces/task').mkdir()
     (tmp_path/'auth.json').write_text('{}')  # dummy, never existing authentication
@@ -65,7 +67,8 @@ print(json.dumps({'type':'result','subtype':'success','is_error':False}))
 ''')
     executable.chmod(0o755)
     value={'schema':'horizon-qualification.v1','execution':'simulated',
-           'socket':str(tmp_path/'state/session.sock'),'state_root':str(tmp_path/'state'),
+           'socket':str(tmp_path/'socket/s.sock'),'socket_root':str(tmp_path/'socket'),
+           'state_root':str(tmp_path/'state'),
            'workspace_root':str(tmp_path/'workspaces'),'runtime_root':str(tmp_path/'runtime'),
            'runtime_entry':'cursor-agent','runtime_files':{'cursor-agent':gate.digest(executable.read_bytes())},
            'auth_file':str(tmp_path/'auth.json'),'subscription_only':True,'on_demand_disabled':True}
@@ -76,6 +79,70 @@ print(json.dumps({'type':'result','subtype':'success','is_error':False}))
 
 def request(config, model='composer-2.5', prompt='probe'):
     return {'model':model,'prompt':prompt,'cwd':str(Path(config['workspace_root'])/'task')}
+
+
+def start_listener(config):
+    path=Path(config['state_root']).parent/'config.json'
+    process=subprocess.Popen([sys.executable,str(ROOT/'tools/qualification/session_gate.py'),
+                              '--config',str(path)],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+    deadline=time.monotonic()+10
+    listener=Path(config['socket'])
+    while not listener.exists() and process.poll() is None and time.monotonic()<deadline:
+        time.sleep(.02)
+    assert listener.is_socket(), process.stderr.read().decode() if process.poll() is not None else ''
+    return process
+
+
+def blocked_exchange(config):
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.connect(config['socket'])
+        connection.sendall(b'{}\n')
+        return json.loads(connection.recv(4096))
+
+
+def test_short_listener_really_binds_connects_and_restarts_with_durable_ledger(config):
+    listener=Path(config['socket'])
+    assert len(os.fsencode(str(listener)))<gate.SUN_PATH_BYTES
+    for _ in range(2):
+        process=start_listener(config)
+        try:
+            assert listener.stat().st_mode & 0o777==0o600
+            assert blocked_exchange(config)['exit']==78
+            assert json.loads((Path(config['state_root'])/'sessions.json').read_text())['sessions']==[]
+        finally:
+            process.send_signal(signal.SIGINT); process.wait(timeout=5)
+        assert not listener.exists()
+
+
+def test_overlong_or_stale_socket_rejected_before_ledger_write(config):
+    path=Path(config['state_root']).parent/'config.json'
+    original=Path(config['socket_root'])
+    name='x'
+    while len(os.fsencode(str(original.parent/name/'s.sock')))<gate.SUN_PATH_BYTES:
+        name+='x'
+    overlong=original.parent/name; overlong.mkdir(mode=0o700)
+    changed={**config,'socket_root':str(overlong),'socket':str(overlong/'s.sock')}
+    path.write_text(json.dumps(changed))
+    assert len(os.fsencode(changed['socket']))>=gate.SUN_PATH_BYTES
+    with pytest.raises(ValueError,match='sockaddr_un'): gate.load_config(path)
+    assert not (Path(config['state_root'])/'sessions.json').exists()
+    Path(config['socket']).write_text('collision evidence')
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError,match='collision'): gate.load_config(path)
+    assert not (Path(config['state_root'])/'sessions.json').exists()
+
+
+def test_socket_runtime_permissions_and_separation_fail_closed(config):
+    path=Path(config['state_root']).parent/'config.json'
+    root=Path(config['socket_root']); root.chmod(0o750)
+    with pytest.raises(ValueError,match='private'): gate.load_config(path)
+    assert not (Path(config['state_root'])/'sessions.json').exists()
+    root.chmod(0o700)
+    changed={**config,'socket_root':config['state_root'],
+             'socket':str(Path(config['state_root'])/'s.sock')}
+    path.write_text(json.dumps(changed))
+    with pytest.raises(ValueError,match='separate private runtime'): gate.load_config(path)
+    assert not (Path(config['state_root'])/'sessions.json').exists()
 
 
 def test_jail_entry_with_dummy_auth_only(config):
