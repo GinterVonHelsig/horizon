@@ -68,6 +68,24 @@ def sanitized_startup_failure(error):
     return 'invalid_configuration_type'
 
 
+def child_diagnostic(stderr, reason, exit_code):
+    """Classify bounded child diagnostics without persisting their contents."""
+    text = str(stderr or '').lower()
+    if any(value in text for value in ('permission denied', 'unauthorized', 'forbidden', 'authentication')):
+        return 'authentication_or_permission_failure'
+    if any(value in text for value in ('unshare', 'mount', 'namespace', 'landlock', 'capability', 'chroot')):
+        return 'confinement_startup_failure'
+    if any(value in text for value in ('unknown option', 'invalid option', 'usage:')):
+        return 'cursor_cli_argument_failure'
+    if text:
+        return 'child_process_failure'
+    if reason in {'timeout', 'cancelled', 'bounded_process_outcome_uncertain'}:
+        return 'child_outcome_uncertain'
+    if exit_code not in (0, None):
+        return 'child_process_failure_without_diagnostics'
+    return 'no_child_diagnostics'
+
+
 def validate_prepared(path, expected, config_path):
     raw=trusted(path).read_bytes()
     if digest(raw)!=expected:
@@ -203,7 +221,7 @@ def launch(config, cwd, model, prompt, timeout):
     proc=subprocess.Popen(argv,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                           start_new_session=True,preexec_fn=lambda:parent_death(broker_pid))
     outgoing=memoryview(json.dumps(payload).encode())
-    out=bytearray(); stderr_bytes=0; deadline=time.monotonic()+timeout
+    out=bytearray(); stderr=bytearray(); stderr_bytes=0; deadline=time.monotonic()+timeout
     try:
         with selectors.DefaultSelector() as selector:
             for stream,event in ((proc.stdin,selectors.EVENT_WRITE),(proc.stdout,selectors.EVENT_READ),(proc.stderr,selectors.EVENT_READ)):
@@ -222,16 +240,22 @@ def launch(config, cwd, model, prompt, timeout):
                         chunk=os.read(stream.fileno(),65536)
                         if not chunk: selector.unregister(stream); stream.close(); continue
                         if stream is proc.stdout: out.extend(chunk)
-                        else: stderr_bytes+=len(chunk)  # discard authentication diagnostics
+                        else:
+                            stderr_bytes+=len(chunk)
+                            if len(stderr)<MAX_BYTES:
+                                stderr.extend(chunk[:MAX_BYTES-len(stderr)])
                         if len(out)>MAX_BYTES or stderr_bytes>MAX_BYTES:
                             raise ValueError('bounded output exceeded')
         proc.wait(timeout=max(.01,deadline-time.monotonic()))
-        return {'exit':proc.returncode,'stdout':out.decode('utf-8',errors='strict'),'reason':'process_exit'}
+        return {'exit':proc.returncode,'stdout':out.decode('utf-8',errors='strict'),
+                'stderr':stderr.decode('utf-8',errors='replace'),
+                'stderr_bytes':stderr_bytes,'reason':'process_exit'}
     except (TimeoutError,ValueError,subprocess.TimeoutExpired):
         try: os.killpg(proc.pid,signal.SIGKILL)
         except ProcessLookupError: pass
         proc.wait(timeout=10)
-        return {'exit':78,'reason':'bounded_process_outcome_uncertain','stdout':''}
+        return {'exit':78,'reason':'bounded_process_outcome_uncertain','stdout':'',
+                'stderr':stderr.decode('utf-8',errors='replace'),'stderr_bytes':stderr_bytes}
     finally:
         for stream in (proc.stdin,proc.stdout,proc.stderr):
             if not stream.closed: stream.close()
@@ -289,9 +313,15 @@ class Gate:
         state['sessions'].append(record)
         save(self.path,state)  # Durable consumption BEFORE any child launch.
         result=launch(self.config,str(cwd),model,request['prompt'],LIMITS[index])
+        child_stderr=result.get('stderr','')
         record.update(state='complete' if validate_output(result,model) else 'uncertain',
                       elapsed_seconds=time.time()-record['started_at'],exit=result['exit'],
-                      stdout_sha256=digest(result['stdout'].encode()))
+                      stdout_sha256=digest(result['stdout'].encode()),
+                      launch_reason=result.get('reason','unknown'),
+                      child_exit=result.get('exit'),
+                      child_stderr_sha256=digest(child_stderr.encode()),
+                      child_stderr_bytes=result.get('stderr_bytes',len(child_stderr.encode())),
+                      child_diagnostic=child_diagnostic(child_stderr,result.get('reason'),result.get('exit')))
         if record['state']=='complete':
             init=next(e for e in (json.loads(line) for line in result['stdout'].splitlines() if line.strip())
                       if e.get('type')=='system' and e.get('subtype')=='init')
