@@ -10,7 +10,7 @@ import subprocess
 from session_gate import inventory_digest, validate_socket_path
 
 ROOT=Path(__file__).resolve().parents[2]
-SHORT_SOCKET_BASE=Path('/run/horizon-q')
+SHORT_SOCKET_BASE=Path('/opt/horizon-q')
 
 
 def builder(name):

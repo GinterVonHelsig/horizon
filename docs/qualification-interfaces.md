@@ -39,7 +39,9 @@ actual transport/model receipts and rejection of incompatible OpenRouter config.
 `tools/qualification/session_gate.py` is a direct Unix-socket broker, not a
 delivery controller. Its durable ledger remains under the immutable artifact
 root, while its listener uses a separate private, root-owned short directory
-under `/run/horizon-q/<prepared-token>/s.sock`. Preparation and broker admission
+under `/opt/horizon-q/<prepared-token>/s.sock`. Unlike `/run`, this runtime-only
+tree remains visible when the disposable worker replaces `/run` with private tmpfs.
+Preparation and broker admission
 validate the encoded Linux `sockaddr_un` length. The broker binds and listens
 before it creates a ledger, so an overlong path, stale listener, ownership error
 or collision fails without consuming durable state. The prepared receipt binds

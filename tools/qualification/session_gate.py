@@ -123,8 +123,11 @@ def load_config(path, authorize_live=False):
     if (socket_path.parent!=socket_root or socket_path.name!='s.sock'
             or socket_root==Path(config['state_root'])):
         raise ValueError('socket must be in its separate private runtime root')
-    if config['execution']=='cursor-subscription' and not socket_root.is_relative_to('/run/horizon-q'):
+    state_root=Path(config['state_root'])
+    if config['execution']=='cursor-subscription' and not socket_root.is_relative_to('/opt/horizon-q'):
         raise ValueError('live socket must use the short qualification runtime root')
+    if socket_root.is_relative_to(state_root) or state_root.is_relative_to(socket_root):
+        raise ValueError('socket and durable state roots must not overlap')
     if any(Path(config[name]).stat().st_mode & 0o077 for name in ('socket_root','state_root')):
         raise ValueError('session state and socket runtime must be private')
     if socket_path.exists() or socket_path.is_symlink():

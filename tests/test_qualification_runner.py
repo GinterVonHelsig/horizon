@@ -143,6 +143,11 @@ def test_socket_runtime_permissions_and_separation_fail_closed(config):
     path.write_text(json.dumps(changed))
     with pytest.raises(ValueError,match='separate private runtime'): gate.load_config(path)
     assert not (Path(config['state_root'])/'sessions.json').exists()
+    nested=Path(config['state_root'])/'nested'; nested.mkdir(mode=0o700)
+    changed={**config,'socket_root':str(nested),'socket':str(nested/'s.sock')}
+    path.write_text(json.dumps(changed))
+    with pytest.raises(ValueError,match='must not overlap'): gate.load_config(path)
+    assert not (Path(config['state_root'])/'sessions.json').exists()
 
 
 def test_jail_entry_with_dummy_auth_only(config):
