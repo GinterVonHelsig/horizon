@@ -73,7 +73,13 @@ jobs:
           sudo apt-get install -y postgresql postgresql-contrib iproute2
           sudo install -d -m 755 /etc/top-delivery
           sudo install -d -m 755 /var/lib/top-delivery-submission-bundles
-          sudo install -d -m 700 /opt/horizon-q
+          # Hosted images may leave /opt group-writable for tool installation.
+          # Qualification intentionally rejects that ancestry, so tighten the
+          # disposable runner before exercising the live-shaped socket root.
+          sudo chown root:root /opt
+          sudo chmod go-w /opt
+          sudo install -o root -g root -d -m 700 /opt/horizon-q
+          sudo namei -l /opt/horizon-q
       - name: Exercise real persistence with simulated model execution
         run: |
           # Migration sources are trust anchors and must be root-owned. Keep
@@ -84,6 +90,7 @@ jobs:
           sudo chmod -R go-w /root/horizon-recovery-ci
           sudo namei -l /root/horizon-recovery-ci/controller/migrations/versions/004_longspan_workflow.py
           sudo env PATH="$PATH" HORIZON_TEST_SOCKET_BASE=/opt/horizon-q bash -c 'cd /root/horizon-recovery-ci && exec bash scripts/test-recovery-isolated.sh "$@"' -- -q -ra --tb=short \
+            --basetemp=/root/horizon-recovery-ci-artifacts/qualification/intentionally-long-durable-pytest-root-matching-live-layout \
             tests/test_review_remediation.py \
             tests/test_comms01_release_deploy.py \
             tests/test_worker.py \
