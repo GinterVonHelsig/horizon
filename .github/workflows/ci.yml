@@ -73,6 +73,7 @@ jobs:
           sudo apt-get install -y postgresql postgresql-contrib iproute2
           sudo install -d -m 755 /etc/top-delivery
           sudo install -d -m 755 /var/lib/top-delivery-submission-bundles
+          sudo install -d -m 700 /opt/horizon-q
       - name: Exercise real persistence with simulated model execution
         run: |
           # Migration sources are trust anchors and must be root-owned. Keep
@@ -82,7 +83,7 @@ jobs:
           sudo cp -R --no-preserve=ownership "$GITHUB_WORKSPACE/." /root/horizon-recovery-ci/
           sudo chmod -R go-w /root/horizon-recovery-ci
           sudo namei -l /root/horizon-recovery-ci/controller/migrations/versions/004_longspan_workflow.py
-          sudo env PATH="$PATH" bash -c 'cd /root/horizon-recovery-ci && exec bash scripts/test-recovery-isolated.sh "$@"' -- -q -ra --tb=short \
+          sudo env PATH="$PATH" HORIZON_TEST_SOCKET_BASE=/opt/horizon-q bash -c 'cd /root/horizon-recovery-ci && exec bash scripts/test-recovery-isolated.sh "$@"' -- -q -ra --tb=short \
             tests/test_review_remediation.py \
             tests/test_comms01_release_deploy.py \
             tests/test_worker.py \

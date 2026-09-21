@@ -1,5 +1,6 @@
 """Packaged direct/socket consumers with fake systemd-run; no services/DB/models."""
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -76,17 +77,31 @@ if mode=='nonzero': raise SystemExit(5)
     python = tmp_path / 'pinned-child-python'
     python.write_text('#!/bin/sh\nexit 99\n')  # fake systemd never executes this pin
     python.chmod(0o755)
+    # Runtime listeners never inherit the durable pytest/artifact pathname. This
+    # mirrors qualification preparation while keeping ordinary tests disposable.
+    token=hashlib.sha256(os.fsencode(str(tmp_path))).hexdigest()[:16]
+    configured_base=os.environ.get('HORIZON_TEST_SOCKET_BASE')
+    socket_base=Path(configured_base or '/tmp')
+    socket_root=socket_base/(token if configured_base else 'horizon-sub-'+token)
+    socket_root.mkdir(mode=0o700)
     cfg = {'schema':'horizon-submission-consumer.v1','enabled':True,'release_root':str(release),
         'release_commit':manifest['source_commit'],'release_manifest_sha256':runtime.digest((release/'manifest.json').read_bytes()),
         'prompt_root':str(tmp_path/'prompts'),'runs_root':str(tmp_path/'runs'),'journal_root':str(tmp_path/'journal'),
-        'socket_path':str(tmp_path/'s'),'service_uid':os.geteuid(),'socket_gid':os.getegid(),'allowed_uids':[os.geteuid()],
+        'socket_path':str(socket_root/'g.sock'),'service_uid':os.geteuid(),'socket_gid':os.getegid(),'allowed_uids':[os.geteuid()],
         'systemd_run':str(fake),'systemd_run_sha256':runtime.digest(fake.read_bytes()),
         'python':str(python),'python_sha256':runtime.digest(python.read_bytes()),
         'environment_file':str(tmp_path/'environment'),'adapter_config':str(tmp_path/'adapters.json'),
         'adapter_sha256':runtime.digest((tmp_path/'adapters.json').read_bytes())}
     path = tmp_path / 'consumer.json'
     path.write_text(json.dumps(cfg))
-    return release, path, prompt
+    try:
+        yield release, path, prompt
+    finally:
+        shutil.rmtree(socket_root)
+
+
+def configured_socket(consumer):
+    return Path(json.loads(consumer[1].read_text())['socket_path'])
 
 
 def command(consumer, entry, *args):
@@ -112,7 +127,7 @@ def calls(consumer):
 def server(consumer):
     process = subprocess.Popen(command(consumer,'top-delivery-host-gateway-server'), env=env(),
         cwd=consumer[1].parent, stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-    path = consumer[1].parent/'s'
+    path = configured_socket(consumer)
     deadline = time.monotonic()+10
     while not path.exists() and process.poll() is None and time.monotonic()<deadline:
         time.sleep(.02)
@@ -297,7 +312,7 @@ def test_client_disconnect_after_receipt_recovers_without_dispatch(consumer, ser
     _,cfg,prompt=consumer
     request={'operation':'submit','prompt_path':str(prompt),'prompt_sha256':runtime.digest(prompt.read_bytes())}
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
-        client.connect(str(cfg.parent/'s'))
+        client.connect(str(configured_socket(consumer)))
         client.sendall(runtime.encoded(request))
     result=invoke(consumer,'top-delivery-submit',prompt)
     assert result.returncode==0,result.stdout+result.stderr
@@ -324,7 +339,7 @@ def test_invalid_server_config_stops_with_nonrestartable_exit(consumer):
     result=invoke(consumer,'top-delivery-host-gateway-server')
     assert result.returncode==78 and 'invalid_service_configuration' in result.stdout
     assert 'RestartPreventExitStatus=78' in (release/'tools/submission_transport/host-gateway.service.in').read_text()
-    assert not (cfg.parent/'s').exists() and not calls(consumer)
+    assert not configured_socket(consumer).exists() and not calls(consumer)
 
 
 def test_socket_dry_run_flag_cannot_become_durable_submit(consumer, server):
@@ -332,7 +347,7 @@ def test_socket_dry_run_flag_cannot_become_durable_submit(consumer, server):
     result=invoke(consumer,'top-delivery-host-gateway','submit','--prompt',prompt,'--dry-run')
     assert result.returncode==78 and calls(consumer)==[]
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
-        client.connect(str(cfg.parent/'s'))
+        client.connect(str(configured_socket(consumer)))
         client.sendall(runtime.encoded({'operation':'submit','prompt_path':str(prompt),
             'prompt_sha256':runtime.digest(prompt.read_bytes()),'dry_run':True}))
         assert runtime.receive(client)['status']=='blocked'
@@ -383,3 +398,41 @@ def test_valid_receipt_reconciles_global_fence_for_distinct_request(consumer):
     second.write_text(prompt.read_text().replace('Disposable submission','Second submission'))
     assert invoke(consumer,'top-delivery-submit',second).returncode==0
     assert len(calls(consumer))==2
+
+
+def test_socket_path_is_short_and_separate_from_nested_durable_root(consumer):
+    _,cfg,_=consumer
+    path=configured_socket(consumer)
+    assert not path.is_relative_to(cfg.parent)
+    assert len(os.fsencode(str(path))) < runtime.SUN_PATH_BYTES
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_overlong_socket_rejected_before_listener_or_durable_write(consumer):
+    _,cfg,_=consumer
+    value=json.loads(cfg.read_text())
+    root=cfg.parent/('nested-'+'x'*120)
+    root.mkdir()
+    value['socket_path']=str(root/'gateway.sock')
+    cfg.write_text(json.dumps(value))
+    result=invoke(consumer,'top-delivery-host-gateway-server')
+    assert result.returncode==78 and 'invalid_service_configuration' in result.stdout
+    client=invoke(consumer,'top-delivery-host-gateway','health')
+    assert client.returncode==78 and 'invalid_request_or_configuration' in client.stdout
+    assert not Path(value['socket_path']).exists()
+    assert not calls(consumer) and not list((cfg.parent/'journal').iterdir())
+
+
+def test_stale_or_untrusted_submission_socket_is_preserved_and_rejected(consumer):
+    _,cfg,_=consumer
+    path=configured_socket(consumer)
+    path.write_text('preserved collision evidence')
+    result=invoke(consumer,'top-delivery-host-gateway-server')
+    assert result.returncode==78 and path.read_text()=='preserved collision evidence'
+    path.unlink()
+    path.parent.chmod(0o777)
+    try:
+        result=invoke(consumer,'top-delivery-host-gateway-server')
+        assert result.returncode==78 and not path.exists()
+    finally:
+        path.parent.chmod(0o700)

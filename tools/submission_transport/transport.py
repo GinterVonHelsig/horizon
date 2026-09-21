@@ -17,6 +17,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 LIMIT = 65536
+SUN_PATH_BYTES = 108  # Linux sockaddr_un.sun_path, including terminating NUL.
 RUN = re.compile(r'goal-[0-9a-f]{16}')
 SHA = re.compile(r'[0-9a-f]{64}')
 HOST_ONLY = re.compile(r"(?:do not|don't|not)\s+(?:(?:run|invoke)\s+)?`?(?:goal_cli(?:\.py)?\s+submit|\$top-delivery)", re.I)
@@ -28,6 +29,18 @@ def encoded(value):
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def unix_socket_path(path):
+    """Validate the final pathname address before writes, launch, bind, or connect."""
+    path = Path(path)
+    encoded_path = os.fsencode(str(path))
+    if not path.is_absolute():
+        raise ValueError('absolute socket path required')
+    if b'\0' in encoded_path or len(encoded_path) >= SUN_PATH_BYTES:
+        raise ValueError('Unix socket path exceeds Linux sockaddr_un limit')
+    trusted(path.parent, directory=True)
+    return path
 
 
 def trusted(path, *, directory=False, private=False):
@@ -71,10 +84,7 @@ def load_config(path):
         pinned(release / name, expected)
     for name in ('prompt_root', 'runs_root', 'journal_root'):
         trusted(config[name], directory=True, private=name == 'journal_root')
-    socket_path = Path(config['socket_path'])
-    if not socket_path.is_absolute():
-        raise ValueError('absolute socket path required')
-    trusted(socket_path.parent, directory=True)
+    unix_socket_path(config['socket_path'])
     for key in ('service_uid', 'socket_gid'):
         if type(config[key]) is not int or config[key] < 0:
             raise ValueError('explicit service identity required')
@@ -362,8 +372,10 @@ def serve(config_path):
     config = load_config(config_path)
     if os.geteuid() != config['service_uid']:
         raise ValueError('wrong service identity')
-    path = Path(config['socket_path'])
+    path = unix_socket_path(config['socket_path'])
     # Never unlink an existing listener or stale path implicitly.
+    if os.path.lexists(path):
+        raise ValueError('submission socket collision or stale listener evidence')
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
         server.bind(str(path))
         os.chmod(path, 0o660)

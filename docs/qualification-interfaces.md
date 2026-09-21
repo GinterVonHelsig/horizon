@@ -34,18 +34,52 @@ the worker auditor, general Gateway integration or installed-service attestation
 Other package tests cover the legacy command name's explicit Cursor requirement,
 actual transport/model receipts and rejection of incompatible OpenRouter config.
 
+### Socket inventory and the missed live boundary
+
+The bounded chain creates four pathname sockets. Preparation binds the first two
+paths and their encoded lengths in `prepared.json`; the isolated runner creates
+the other two at fixed short paths:
+
+| Producer | Consumers | Path and namespace |
+|---|---|---|
+| Session broker | packaged worker adapter and standalone reviewer clients | `/opt/horizon-q/<prepared-token>/b.sock`, broker on the Comms-01 host and clients inside the isolated qualification |
+| Packaged submission server | direct/socket submission CLI | `/opt/horizon-q/<prepared-token>/g.sock`, inside the isolated qualification but on the host-visible `/opt` tree |
+| Disposable PostgreSQL | migrations and orchestration fixtures | `/run/postgresql/.s.PGSQL.5432`, private qualification mount/network namespace only |
+| Disposable authority service | orchestration clients | `/run/top-delivery/comms01-authority.sock`, private qualification mount namespace only |
+
+The parent-controller, Signal and Hermes listeners are not started by this
+qualification and are therefore not claimed by its evidence. Before the first
+durable submission, the packaged rehearsal validates every encoded path, verifies
+each object is a socket, connects to all four from the dispatch namespace, and
+runs the submission server's real health protocol without creating a journal.
+
+The earlier complete simulation missed the live failure because its generic
+submission fixture placed `socket_path` below pytest's ordinary `tmp_path`, which
+was short enough, while the live opt-in supplied a much longer explicit
+`--basetemp`. Only the broker path was replaced from the prepared receipt; the
+submission listener continued to inherit the nested live pytest path. The
+corrected fixture always generates broker and submission paths together in a
+separate short private runtime root, while a regression runs the same packaged
+commands, config generation, private namespaces, long artifact layout, actual
+orchestration and persistence. The privileged regression explicitly sets
+`HORIZON_TEST_SOCKET_BASE=/opt/horizon-q`, so its runtime layout matches the live
+prepared root rather than silently shortening pytest's durable directory under
+`/tmp`. Only the Cursor processes are simulated.
+
 ## Isolation and durable limits
 
 `tools/qualification/session_gate.py` is a direct Unix-socket broker, not a
 delivery controller. Its durable ledger remains under the immutable artifact
 root, while its listener uses a separate private, root-owned short directory
-under `/opt/horizon-q/<prepared-token>/s.sock`. Unlike `/run`, this runtime-only
+under `/opt/horizon-q/<prepared-token>/b.sock`. The packaged submission listener
+uses sibling `/opt/horizon-q/<prepared-token>/g.sock`; neither inherits the
+durable artifact or pytest path. Unlike `/run`, this runtime-only
 tree remains visible when the disposable worker replaces `/run` with private tmpfs.
 Preparation and broker admission
 validate the encoded Linux `sockaddr_un` length. The broker binds and listens
 before it creates a ledger, so an overlong path, stale listener, ownership error
 or collision fails without consuming durable state. The prepared receipt binds
-the exact socket and encoded length. Clean restart recreates only the ephemeral
+both exact sockets and encoded lengths. Clean restart recreates only the ephemeral
 listener and retains the same durable budget; reboot or an uncertain intent still
 blocks rather than resetting the ledger.
 

@@ -50,6 +50,8 @@ def validate_socket_path(path):
     """Reject a pathname AF_UNIX address before a ledger or process is created."""
     path=Path(path)
     encoded=os.fsencode(str(path))
+    if not path.is_absolute():
+        raise ValueError('qualification Unix socket path must be absolute')
     if b'\0' in encoded or len(encoded)>=SUN_PATH_BYTES:
         raise ValueError('qualification Unix socket path exceeds Linux sockaddr_un limit')
     return path
@@ -63,7 +65,11 @@ def validate_prepared(path, expected, config_path):
     config_path=Path(config_path).absolute()
     config_bytes=trusted(config_path).read_bytes()
     config=json.loads(config_bytes)
-    if (prepared.get('schema')!='horizon-qualification-prepared.v1'
+    submission_socket=validate_socket_path(prepared.get('submission_socket',''))
+    endpoints=prepared.get('socket_endpoints',{})
+    if not isinstance(endpoints,dict) or any(not isinstance(item,dict) for item in endpoints.values()):
+        raise ValueError('prepared socket endpoint inventory is invalid')
+    if (prepared.get('schema')!='horizon-qualification-prepared.v2'
             or prepared.get('status')!='NOT_INVOKED'
             or prepared.get('gate_config')!=str(config_path)
             or prepared.get('gate_sha256')!=digest(config_bytes)
@@ -71,6 +77,16 @@ def validate_prepared(path, expected, config_path):
             or config.get('auth_file')!=prepared.get('authentication_reference_only')
             or config.get('socket')!=prepared.get('broker_socket')
             or len(os.fsencode(config.get('socket','')))!=prepared.get('broker_socket_path_bytes')
+            or submission_socket.parent!=Path(config.get('socket_root',''))
+            or submission_socket.name!='g.sock'
+            or len(os.fsencode(str(submission_socket)))!=prepared.get('submission_socket_path_bytes')
+            or set(endpoints)!={'session_broker','submission_listener','postgresql','authority_service'}
+            or endpoints.get('session_broker',{}).get('path')!=config.get('socket')
+            or endpoints.get('submission_listener',{}).get('path')!=str(submission_socket)
+            or endpoints.get('postgresql',{}).get('path')!='/run/postgresql/.s.PGSQL.5432'
+            or endpoints.get('authority_service',{}).get('path')!='/run/top-delivery/comms01-authority.sock'
+            or any(item.get('encoded_bytes')!=len(os.fsencode(item.get('path','')))
+                   for item in endpoints.values())
             or prepared.get('runtime_inventory_sha256')!=inventory_digest(config.get('runtime_files'))
             or prepared.get('maximum_sessions')!=5
             or prepared.get('automatic_retries')!=0 or prepared.get('fallback_calls')!=0):
@@ -120,7 +136,7 @@ def load_config(path, authorize_live=False):
             raise ValueError('workspace must not overlap protected qualification inputs')
     socket_path=validate_socket_path(config['socket'])
     socket_root=Path(config['socket_root'])
-    if (socket_path.parent!=socket_root or socket_path.name!='s.sock'
+    if (socket_path.parent!=socket_root or socket_path.name!='b.sock'
             or socket_root==Path(config['state_root'])):
         raise ValueError('socket must be in its separate private runtime root')
     state_root=Path(config['state_root'])

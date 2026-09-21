@@ -57,12 +57,21 @@ def durable_json(path,value):
     finally: os.close(fd)
 
 
-def qualification_socket(output,sha,base=None):
-    """Return a deterministic short runtime address, never an artifact pathname."""
+def qualification_sockets(output,sha,base=None):
+    """Return deterministic short runtime addresses, never artifact pathnames."""
     base=SHORT_SOCKET_BASE if base is None else Path(base)
     token=hashlib.sha256((sha+'\0'+str(output)).encode()).hexdigest()[:16]
     root=base/token
-    return root,validate_socket_path(root/'s.sock')
+    return root, {
+        'session_broker': validate_socket_path(root/'b.sock'),
+        'submission_listener': validate_socket_path(root/'g.sock'),
+    }
+
+
+def qualification_socket(output,sha,base=None):
+    """Compatibility helper for callers that need only the broker endpoint."""
+    root,sockets=qualification_sockets(output,sha,base)
+    return root,sockets['session_broker']
 
 
 def create_private_socket_root(root):
@@ -86,7 +95,8 @@ def prepare(output,runtime,auth):
     if subprocess.check_output(['git','status','--porcelain'],cwd=ROOT):
         raise ValueError('commit and review the source before live preparation')
     output=output.absolute(); runtime=runtime.absolute(); auth=auth.absolute()
-    socket_root,socket_path=qualification_socket(output,sha)
+    socket_root,sockets=qualification_sockets(output,sha)
+    socket_path=sockets['session_broker']
     if os.path.lexists(socket_root):
         raise ValueError('qualification socket runtime collision')
     for path in (output,runtime,auth):
@@ -116,10 +126,31 @@ def prepare(output,runtime,auth):
         'runtime_root':str(copied),'runtime_entry':'cursor-agent','runtime_files':files,
         'auth_file':str(auth),'subscription_only':True,'on_demand_disabled':True}
     gate=output/'gate.json'; durable_json(gate,config)
-    value={'schema':'horizon-qualification-prepared.v1','status':'NOT_INVOKED','source_commit':sha,'gate_config':str(gate),
+    endpoint_inventory={
+        'session_broker': {'path':str(sockets['session_broker']),
+            'encoded_bytes':len(os.fsencode(str(sockets['session_broker']))),
+            'producer_namespace':'Comms-01 host',
+            'consumer_namespace':'isolated qualification and packaged worker clients'},
+        'submission_listener': {'path':str(sockets['submission_listener']),
+            'encoded_bytes':len(os.fsencode(str(sockets['submission_listener']))),
+            'producer_namespace':'isolated qualification',
+            'consumer_namespace':'isolated packaged submission clients'},
+        'postgresql': {'path':'/run/postgresql/.s.PGSQL.5432',
+            'encoded_bytes':len(os.fsencode('/run/postgresql/.s.PGSQL.5432')),
+            'producer_namespace':'isolated qualification',
+            'consumer_namespace':'isolated migration and orchestration fixtures'},
+        'authority_service': {'path':'/run/top-delivery/comms01-authority.sock',
+            'encoded_bytes':len(os.fsencode('/run/top-delivery/comms01-authority.sock')),
+            'producer_namespace':'isolated qualification',
+            'consumer_namespace':'isolated orchestration fixtures'},
+    }
+    value={'schema':'horizon-qualification-prepared.v2','status':'NOT_INVOKED','source_commit':sha,'gate_config':str(gate),
         'gate_sha256':hashlib.sha256(gate.read_bytes()).hexdigest(),
         'runtime_inventory_sha256':inventory_digest(files),'excluded_installed_state':['.running/'],
         'broker_socket':str(socket_path),'broker_socket_path_bytes':len(os.fsencode(str(socket_path))),
+        'submission_socket':str(sockets['submission_listener']),
+        'submission_socket_path_bytes':len(os.fsencode(str(sockets['submission_listener']))),
+        'socket_endpoints':endpoint_inventory,
         'submission_release':str(submission),'review_release':str(review),'maximum_sessions':5,
         'automatic_retries':0,'fallback_calls':0,'on_demand_disabled_evidence':'operator confirmation',
         'runtime_source':str(runtime),'authentication_reference_only':str(auth)}

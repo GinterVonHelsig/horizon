@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import shlex
+import socket
 import subprocess
 import sys
 import time
@@ -34,7 +35,8 @@ def qualification_inputs():
 def consumer(tmp_path, built, db_url, qualification_inputs):
     # Reuse real package consumer preparation, replacing receipt simulation with
     # a dispatcher that runs the actual packaged canonical CLI in a subprocess.
-    value = transport_tests.consumer.__wrapped__(tmp_path, built)
+    base_consumer = transport_tests.consumer.__wrapped__(tmp_path, built)
+    value = next(base_consumer)
     release, cfg_path, prompt = value
     prompt.write_text(prompt.read_text()+'\n## Ordered workstreams\n\n### 1. Parent\n\n## Cross-workstream acceptance matrix\n\n| Item | Required terminal disposition |\n|---|---|\n| 1. Parent | `PASS/PARENT` |\n\nDisposable test identity: '+tmp_path.name+'\n')
     prompt.write_text(prompt.read_text()+'\nParent continuation: acknowledge only the host-validated prerequisite product listed in VALIDATED PREREQUISITE PRODUCTS. Do not read paths outside this task workspace or create any other files. Write the assigned executor-result.json with disposition PASS/PARENT, evidence_summary, and adopted_product_sha256 equal to that validated product_sha256. Do not invoke shell, network, controllers, siblings, retries or remediation.\n')
@@ -44,15 +46,18 @@ def consumer(tmp_path, built, db_url, qualification_inputs):
     shutil.copyfile(ROOT/'controller/test_only/simulated_cursor_process.py', fake)
     fake.chmod(0o755)
     state=tmp_path/'session-state'; state.mkdir(mode=0o700)
-    socket_root=tmp_path/'session-socket'; socket_root.mkdir(mode=0o700)
-    (tmp_path/'auth.json').write_text('{}')
+    socket_root=transport_tests.configured_socket(value).parent
+    simulated_auth_root=Path('/tmp')/('horizon-auth-'+socket_root.name)
+    simulated_auth_root.mkdir(mode=0o700)
+    simulated_auth=simulated_auth_root/'auth.json'
+    simulated_auth.write_text('{}')
     standalone=tmp_path/'runs/standalone-review'; standalone.mkdir()
     gate_config={'schema':'horizon-qualification.v1','execution':'simulated',
-        'socket':str(socket_root/'s.sock'),'socket_root':str(socket_root),
+        'socket':str(socket_root/'b.sock'),'socket_root':str(socket_root),
         'state_root':str(state),'workspace_root':str(tmp_path/'runs'),
         'runtime_root':str(runtime_root),'runtime_entry':'cursor-agent',
         'runtime_files':{'cursor-agent':transport_tests.runtime.digest(fake.read_bytes())},
-        'auth_file':str(tmp_path/'auth.json'),'subscription_only':True,'on_demand_disabled':True}
+        'auth_file':str(simulated_auth),'subscription_only':True,'on_demand_disabled':True}
     if qualification_inputs:
         gate_config=json.loads(Path(qualification_inputs['gate_config']).read_text())
         state=Path(gate_config['state_root'])
@@ -89,29 +94,74 @@ raise SystemExit(result.returncode)
 ''')
     dispatcher.chmod(0o755)
     cfg = json.loads(cfg_path.read_text())
+    if qualification_inputs:
+        cfg['socket_path']=qualification_inputs['submission_socket']
+        assert Path(cfg['socket_path']).parent==Path(gate_config['socket_root'])
+        assert len(os.fsencode(cfg['socket_path']))==qualification_inputs['submission_socket_path_bytes']
     python_pin=Path(cfg['python'])
     python_pin.write_text('#!/bin/sh\nexec '+shlex.quote(sys.executable)+' '+shlex.quote(str(ROOT/'controller/test_only/packaged_cli.py'))+' "$@"\n')
     cfg['python_sha256']=transport_tests.runtime.digest(python_pin.read_bytes())
     cfg['adapter_sha256'] = transport_tests.runtime.digest((tmp_path/'adapters.json').read_bytes())
     cfg['systemd_run_sha256'] = transport_tests.runtime.digest(dispatcher.read_bytes())
     cfg_path.write_text(json.dumps(cfg))
-    if qualification_inputs:
-        assert Path(gate_config['socket']).is_socket()
-        yield value
-        return
-    broker=subprocess.Popen([sys.executable,str(release/'tools/qualification/session_gate.py'),'--config',str(gate_path)],
-                            stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+    broker=None
     try:
-        deadline=time.monotonic()+10
-        while not Path(gate_config['socket']).exists() and broker.poll() is None and time.monotonic()<deadline:
-            time.sleep(.02)
-        assert Path(gate_config['socket']).exists()
+        if qualification_inputs:
+            assert Path(gate_config['socket']).is_socket()
+        else:
+            broker=subprocess.Popen([sys.executable,str(release/'tools/qualification/session_gate.py'),'--config',str(gate_path)],
+                                    stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            deadline=time.monotonic()+10
+            while not Path(gate_config['socket']).exists() and broker.poll() is None and time.monotonic()<deadline:
+                time.sleep(.02)
+            assert Path(gate_config['socket']).exists(),broker.stderr.read().decode() if broker.poll() is not None else ''
         yield value
     finally:
-        broker.terminate(); broker.communicate(timeout=5)
+        if broker is not None:
+            broker.terminate(); broker.communicate(timeout=5)
+        try:
+            next(base_consumer)
+        except StopIteration:
+            pass
+        shutil.rmtree(simulated_auth_root)
 
 
 server = transport_tests.server
+
+
+def socket_inventory(consumer, qualification_inputs):
+    root=consumer[1].parent
+    gate=json.loads((root/'gate.json').read_text())
+    if qualification_inputs:
+        endpoints=qualification_inputs['socket_endpoints']
+    else:
+        submission=str(transport_tests.configured_socket(consumer))
+        values={
+            'session_broker':gate['socket'],
+            'submission_listener':submission,
+            'postgresql':'/run/postgresql/.s.PGSQL.5432',
+            'authority_service':'/run/top-delivery/comms01-authority.sock',
+        }
+        endpoints={name:{'path':path,'encoded_bytes':len(os.fsencode(path))}
+                   for name,path in values.items()}
+    assert set(endpoints)=={'session_broker','submission_listener','postgresql','authority_service'}
+    for endpoint in endpoints.values():
+        assert endpoint['encoded_bytes']==len(os.fsencode(endpoint['path']))<transport_tests.runtime.SUN_PATH_BYTES
+        assert Path(endpoint['path']).is_socket(), endpoint
+    assert Path(endpoints['session_broker']['path']).parent==Path(endpoints['submission_listener']['path']).parent
+    assert not Path(endpoints['session_broker']['path']).is_relative_to(root)
+    # Real connections in the namespace which will dispatch. Close-only probes
+    # prove visibility without consuming a broker session or application row.
+    for name in ('session_broker','postgresql','authority_service'):
+        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
+            connection.connect(endpoints[name]['path'])
+    health=transport_tests.invoke(consumer,'top-delivery-host-gateway','health')
+    assert health.returncode==0,health.stdout+health.stderr
+    assert json.loads(health.stdout)['status']=='ok'
+    assert not transport_tests.calls(consumer)
+    return {name:{'path':item['path'],'encoded_bytes':item['encoded_bytes'],
+                  'mount_namespace':os.readlink('/proc/self/ns/mnt')}
+            for name,item in endpoints.items()}
 
 
 @pytest.mark.parametrize('first_path',['direct','socket'])
@@ -119,6 +169,7 @@ def test_packaged_submission_to_durable_whole_goal(consumer, server, db_url, fir
     release, cfg_path, prompt = consumer
     root = cfg_path.parent
     config = json.loads((root/'adapters.json').read_text())
+    endpoints=socket_inventory(consumer,qualification_inputs)
     parsed = parse_prompt_file(prompt)
     artifacts = root/'runs'/parsed.run_id/'artifacts'
     artifacts.mkdir(parents=True)
@@ -172,7 +223,8 @@ def test_packaged_submission_to_durable_whole_goal(consumer, server, db_url, fir
         assert parent_result['structured_payload']['extracted_json']['adopted_product_sha256']==adoptions[0]['product_digest']
         (root/'packaged-chain-evidence.json').write_text(json.dumps({'execution':'CURSOR SUBSCRIPTION' if qualification_inputs else 'SIMULATED MODEL SUBPROCESSES',
             'service_identity':'pytest private seam, not live systemd', 'steps':steps,
-            'durable_status':json.loads(after.stdout)}, indent=2))
+            'durable_status':json.loads(after.stdout),'socket_endpoints':endpoints,
+            'durable_artifact_root':str(root)}, indent=2))
         standalone_review(root, artifacts, config, db_url, parsed.run_id, qualification_inputs)
         sessions=json.loads((state_root/'sessions.json').read_text())['sessions']
         assert len(sessions)==5 and all(s['state']=='complete' for s in sessions)
