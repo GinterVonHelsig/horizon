@@ -68,6 +68,9 @@ if prompt=='probe':
             pathlib.Path('forbidden-write').touch()
             raise AssertionError('review workspace writable')
         except OSError: pass
+if prompt=='exit78':
+    print('Permission denied: /secret/auth.json', file=sys.stderr)
+    sys.exit(78)
 print(json.dumps({'type':'system','subtype':'init','model':model,'session_id':'SIMULATED'}))
 print(json.dumps({'type':'result','subtype':'success','is_error':False}))
 ''')
@@ -289,6 +292,22 @@ def test_child_failure_persists_sanitized_launch_diagnostic_without_replay(confi
     with pytest.raises(ValueError,match='outcome uncertain'):
         broker.request(request(config))
     broker.lock.close()
+
+
+def test_real_launch_propagates_child_exit_and_records_diagnostic(config):
+    broker=gate.Gate(config)
+    try:
+        result=broker.request(request(config,prompt='exit78'))
+        assert result['exit']==78
+    finally:
+        broker.lock.close()
+    record=json.loads((Path(config['state_root'])/'sessions.json').read_text())['sessions'][0]
+    assert record['state']=='uncertain'
+    assert record['child_exit']==78
+    assert record['launch_reason']=='process_exit'
+    assert record['child_diagnostic']=='authentication_or_permission_failure'
+    assert record['child_stderr_bytes']>0
+    assert 'secret/auth' not in (Path(config['state_root'])/'sessions.json').read_text()
 
 
 def test_reboot_or_interrupted_write_cannot_reset_deadline(config):
