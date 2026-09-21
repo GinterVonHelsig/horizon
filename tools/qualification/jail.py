@@ -16,6 +16,22 @@ def command(*args):
     subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def pivot_root_into(root):
+    """Make the private tmpfs root authoritative and detach the host root."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    os.chdir(root)
+    (Path('oldroot')).mkdir()
+    if libc.syscall(155, b'.', b'oldroot') != 0:  # pivot_root(2), x86_64
+        raise OSError(ctypes.get_errno(), 'pivot_root failed')
+    os.chdir('/')
+    if libc.syscall(166, b'/oldroot', 2) != 0:  # umount2(MNT_DETACH)
+        raise OSError(ctypes.get_errno(), 'detaching old root failed')
+    try:
+        Path('/oldroot').rmdir()
+    except OSError:
+        pass
+
+
 def enter(config, cwd, model, prompt):
     # Refuse direct entry into the host mount/PID namespaces.
     if any(os.readlink('/proc/self/ns/'+kind) == config['outer_'+kind] for kind in ('mnt','pid')):
@@ -53,6 +69,15 @@ def enter(config, cwd, model, prompt):
             (root/'etc/resolv.conf').touch()
         else:
             bind(path, path)
+    # Minimal identity metadata for the mapped disposable UID only.  These are
+    # generated inside the private root; no host account or sub-ID database is
+    # copied.  Empty sub-ID files deliberately grant no subordinate ranges.
+    (root/'etc/passwd').write_text('nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n')
+    (root/'etc/group').write_text('nogroup:x:65534:\n')
+    (root/'etc/subuid').write_text('')
+    (root/'etc/subgid').write_text('')
+    for name in ('passwd', 'group', 'subuid', 'subgid'):
+        (root/f'etc/{name}').chmod(0o644)
     for path in ('/dev/null','/dev/urandom','/dev/random'):
         bind(path, path, writable=True)
     bind(config['runtime_root'], '/cursor-runtime')
@@ -61,7 +86,7 @@ def enter(config, cwd, model, prompt):
         (root/name).mkdir(mode=0o700, exist_ok=True)
     bind(config['auth_file'], '/cursor-home/.config/cursor/auth.json')
     command('/usr/bin/mount', '-t', 'proc', '-o', 'nosuid,nodev,noexec', 'proc', str(root/'proc'))
-    os.chroot(root)
+    pivot_root_into(root)
     os.chdir(cwd)
     libc = ctypes.CDLL(None, use_errno=True)
     # Root inside the jail has no capabilities and cannot acquire them via exec.

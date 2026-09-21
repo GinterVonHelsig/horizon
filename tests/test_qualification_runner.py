@@ -10,6 +10,8 @@ import socket
 import subprocess
 import sys
 import time
+import pwd
+import grp
 
 import pytest
 from test_only.isolation import require_isolation
@@ -33,7 +35,7 @@ def config(tmp_path):
     (tmp_path/'auth.json').write_text('{}')  # dummy, never existing authentication
     executable=tmp_path/'runtime/cursor-agent'
     executable.write_text('''#!/usr/bin/python3 -I
-import json,os,pathlib,socket,sys,time
+import grp,json,os,pathlib,pwd,socket,sys,time
 model=sys.argv[sys.argv.index('--model')+1]
 prompt=sys.argv[sys.argv.index('-p')+1]
 if prompt=='blank-lines': print('\\n  \\n')
@@ -46,6 +48,15 @@ if prompt in {'timeout','orphan'}:
     pathlib.Path('started').touch()
     time.sleep(60)
 if prompt=='probe':
+    assert os.getuid()==65534 and os.getgid()==65534
+    assert pwd.getpwuid(65534).pw_name=='nobody'
+    assert grp.getgrgid(65534).gr_name=='nogroup'
+    assert pathlib.Path('/etc/subuid').read_text()==''
+    assert pathlib.Path('/etc/subgid').read_text()==''
+    assert not pathlib.Path('/oldroot').exists()
+    status={line.split(':',1)[0]:line.split()[1] for line in pathlib.Path('/proc/self/status').read_text().splitlines() if line.startswith(('CapInh:','CapPrm:','CapEff:','CapBnd:','CapAmb:','NoNewPrivs:'))}
+    assert all(status[name]=='0000000000000000' for name in ('CapInh','CapPrm','CapEff','CapBnd','CapAmb'))
+    assert status['NoNewPrivs']=='1'
     for port in (80,5432):
         with socket.socket() as connection:
             try:
@@ -170,10 +181,38 @@ def test_socket_runtime_permissions_and_separation_fail_closed(config):
 def test_jail_entry_with_dummy_auth_only(config):
     payload={'config':{**config,'outer_mnt':os.readlink('/proc/self/ns/mnt'),
                       'outer_pid':os.readlink('/proc/self/ns/pid')}, **request(config)}
-    result=subprocess.run(['/usr/bin/unshare','--mount','--pid','--fork','--kill-child=SIGKILL',
+    result=subprocess.run(['/usr/bin/unshare','--user','--map-user=65534','--map-group=65534','--keep-caps',
+        '--mount','--pid','--fork','--kill-child=SIGKILL',
         sys.executable,str(ROOT/'tools/qualification/jail.py')],input=json.dumps(payload),
         capture_output=True,text=True,timeout=10)
     assert result.returncode==0, result.stderr
+
+
+def test_installed_cursor_helper_no_model_preflight_through_gate(config, tmp_path):
+    """Run the real helper through Gate.launch when an explicit staged dependency exists."""
+    helper_value=os.environ.get('HORIZON_CURSOR_SANDBOX')
+    if not helper_value:
+        pytest.skip('real Cursor helper unavailable in CI; helper preflight remains unverified')
+    helper=Path(helper_value)
+    assert helper.is_file() and helper.stat().st_uid==0 and not (helper.stat().st_mode & 0o4000)
+    runtime=tmp_path/'runtime-real'; runtime.mkdir(mode=0o755)
+    shutil.copy2(helper,runtime/'cursorsandbox'); (runtime/'cursorsandbox').chmod(0o755)
+    agent=runtime/'cursor-agent'
+    agent.write_text('''#!/usr/bin/python3 -I
+import json, pathlib, subprocess, sys
+policy=pathlib.Path.cwd()/'sandbox-policy.json'
+policy.write_text(json.dumps({'sandbox':{'type':'workspace_readonly','cwd':str(pathlib.Path.cwd())}}))
+r=subprocess.run(['/cursor-runtime/cursorsandbox','--policy',str(policy),'--preflight-only','/bin/true'],capture_output=True,text=True)
+if r.returncode:
+    print(r.stderr,file=sys.stderr); raise SystemExit(78)
+print(json.dumps({'type':'result','subtype':'success','is_error':False}))
+'''); agent.chmod(0o755)
+    value={**config,'runtime_root':str(runtime),'runtime_files':{name:gate.digest((runtime/name).read_bytes()) for name in ('cursor-agent','cursorsandbox')}}
+    path=tmp_path/'real-config.json'; path.write_text(json.dumps(value)); broker=gate.Gate(value)
+    try:
+        result=broker.request({'model':'composer-2.5','prompt':'sandbox-preflight','cwd':str(Path(value['workspace_root'])/'task')})
+        assert result['exit']==0, result
+    finally: broker.lock.close()
 
 
 def test_real_jail_five_sessions_restart_limit_and_readonly_review(config):

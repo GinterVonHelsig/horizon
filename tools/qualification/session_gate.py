@@ -215,7 +215,8 @@ def launch(config, cwd, model, prompt, timeout):
     payload={'config':{**config,'outer_mnt':os.readlink('/proc/self/ns/mnt'),
                        'outer_pid':os.readlink('/proc/self/ns/pid')},
              'cwd':cwd,'model':model,'prompt':prompt}
-    argv=['/usr/bin/unshare','--mount','--pid','--fork','--kill-child=SIGKILL',
+    argv=['/usr/bin/unshare','--user','--map-user=65534','--map-group=65534','--keep-caps',
+          '--mount','--pid','--fork','--kill-child=SIGKILL',
           sys.executable,str(Path(__file__).with_name('jail.py'))]
     broker_pid=os.getpid()
     proc=subprocess.Popen(argv,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
