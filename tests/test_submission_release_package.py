@@ -41,7 +41,8 @@ def consumer(tmp_path, built):
     prompt = tmp_path / 'prompts' / 'goal.md'
     prompt.write_text('# Disposable submission\n\n**Objective:** Parse only.\n\n## Mission\n\nTest transport.\n\n## P0 authority envelope\n\nAllowed:\n\n- disposable work\n\nForbidden without a new explicit authority envelope:\n\n- production\n')
     (tmp_path / 'environment').write_text('# simulated only, no credentials\n')
-    (tmp_path / 'adapters.json').write_text('{}\n')
+    adapter_config=json.loads((ROOT/'systemd/adapters.gateway-delivery-disposable.json.example').read_text())
+    (tmp_path / 'adapters.json').write_text(json.dumps(adapter_config))
     fake = tmp_path / 'fake-systemd-run'
     fake.write_text('''#!/usr/bin/python3 -I
 import json,os,pathlib,sys,time
@@ -140,6 +141,33 @@ def test_both_paths_share_release_config_journal_and_receipt(consumer, server):
     assert '--adapter-config' in argv and '--database-url' not in argv
     assert 'd7305d4' not in str(argv) and '/current/' not in str(argv)
     assert json.loads(submitted.stdout)['release_commit'] == json.loads(cfg.read_text())['release_commit']
+
+
+def test_prerequisite_snapshot_cross_path_retry_and_conflict(consumer, server):
+    _, cfg, prompt = consumer
+    spec = json.loads((cfg.parent/'adapters.json').read_text())['adapters'][0]['delivery_spec']
+    prerequisite = prompt.parent/'prerequisites.json'
+    from prompt_ingest import parse_prompt_file
+    parsed = parse_prompt_file(prompt)
+    prerequisite.write_text(json.dumps({str(parsed.workstreams[0].number): [spec]}))
+    flags = ['--prerequisites-json', prerequisite, '--prerequisites-sha256', runtime.digest(prerequisite.read_bytes())]
+    first = invoke(consumer, 'top-delivery-submit', prompt, *flags)
+    assert first.returncode == 0, first.stdout+first.stderr
+    repeated = invoke(consumer, 'top-delivery-host-gateway', 'submit', '--prompt', prompt, *flags)
+    assert repeated.returncode == 0 and repeated.stdout == first.stdout
+    argv = calls(consumer)[0]
+    snapshot = Path(argv[argv.index('--prerequisites-json')+1])
+    assert snapshot != prerequisite and snapshot.read_bytes() == prerequisite.read_bytes()
+    identity = json.loads((snapshot.parent/'request.json').read_text())
+    assert identity['prerequisites_sha256'] == runtime.digest(prerequisite.read_bytes())
+    omitted = invoke(consumer, 'top-delivery-submit', prompt)
+    assert omitted.returncode == 78
+    prerequisite.write_text(prerequisite.read_text()+'\n')
+    stale = invoke(consumer, 'top-delivery-submit', prompt, *flags)
+    assert stale.returncode == 78
+    flags[-1] = runtime.digest(prerequisite.read_bytes())
+    changed = invoke(consumer, 'top-delivery-submit', prompt, *flags)
+    assert changed.returncode == 78 and len(calls(consumer)) == 1
 
 
 @pytest.mark.parametrize('fault', ['release_hash','release_commit','current_symlink','adapter_hash','disabled','host_only','outside_prompt','prompt_traversal','open_permissions','denied_peer'])

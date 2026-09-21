@@ -15,6 +15,8 @@ activated. Task completion is not whole-goal completion.
 | Bounded providers | One-file profile and restricted integer-function source/test recipe, independent review and bounded terminal behavior |
 | External reviewer package | Relocatable canonical command/legacy argv shim, explicit Cursor transport, pinned configuration, actual identity/history, passing verdicts, no non-review-seat bypass |
 | Submission transport package | Both direct/socket paths, one pinned release/config/journal, peer/prompt checks, bounded dispatch and truthful receipt/exit, safe partial-failure handling |
+| Qualification interfaces | Immutable prerequisite forwarding; explicit Cursor-only parent-review CLI profile with author independence; September default unchanged |
+| Qualification runner | Durable five-session broker, confined subprocesses, timeout/orphan/uncertain-state handling; separate live opt-in not invoked by ordinary CI |
 
 No known source work remains in these **bounded** implementations apart from any
 findings recorded by the fresh exact-commit review. Unknown-effect reconciliation
@@ -39,11 +41,16 @@ remain unfinished **outside this scope**, not silently satisfied by these packag
 | 11 Paused/stopped preservation | Application recovery tests; historical schema tests cover paused/failed/active, with failed NOT equated to stopped |
 | 12 Truthful durable completion and CLI exits | Complete simulated parent→prerequisite→handoff→continuation→whole-goal chain, missing successors/concurrent finalizers/outage/uncertain-effect tests |
 
-Packaged submission consumers use real CLI/socket processes but **fake systemd-run
-and goal_cli receipts/effects**; they do not prove production service attestation.
+Small transport-only tests use fake systemd-run/receipts. The additional packaged
+qualification suite uses **actual goal/worker CLI subprocesses and private
+PostgreSQL through021**, with simulated models and pytest-only systemd identity;
+it does not prove production service attestation.
 Packaged reviewer consumers use fake Cursor subprocesses. A separate genuine
 Cursor/Grok **source review** is not a live delivery task or adapter integration
 qualification. Record those distinct evidence classes in the final receipt.
+The full simulated chain consumes four durable broker sessions; the standalone
+packaged reviewer consumes the fifth as a separately labeled launcher boundary.
+See qualification-interfaces.md for isolation, timeout evidence and live opt-in.
 
 Reconstructed-source016/017→021 upgrade/recovery tests preserve synthetic state.
 Read-only production metadata inspection observed020 with matching inspected

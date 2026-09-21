@@ -152,9 +152,50 @@ def receipt(raw, identity):
         'release_commit': identity['release_commit'], 'artifact_paths': paths}
 
 
+def prerequisites(config, request, parsed):
+    path, expected = request.get('prerequisites_path'), request.get('prerequisites_sha256')
+    if path is None and expected is None:
+        return None
+    if not path or not expected:
+        raise ValueError('prerequisites require path and immutable digest')
+    path = trusted(path)
+    if not path.is_relative_to(config['prompt_root']) or path.suffix != '.json':
+        raise ValueError('prerequisites outside prompt allowlist')
+    data = pinned(path, expected)
+    if len(data) > LIMIT:
+        raise ValueError('oversized prerequisites')
+    value = json.loads(data)
+    if not isinstance(value, dict) or set(value) - {str(w.number) for w in parsed.workstreams}:
+        raise ValueError('unknown prerequisite workstream')
+    from bounded_delivery import validate_spec, validate_binding
+    from subworkflow_handoff import build_handoff_request, digest_value
+    from harness_adapters.registry import load_registry_config, validate_task_routes
+    registry = load_registry_config(Path(config['adapter_config']), validate_executables=False)
+    for specs in value.values():
+        if not isinstance(specs, list) or not specs:
+            raise ValueError('nonempty prerequisite list required')
+        seen = set()
+        for spec in specs:
+            validate_spec(spec)
+            if spec['prerequisite_id'] in seen:
+                raise ValueError('duplicate prerequisite identity')
+            seen.add(spec['prerequisite_id'])
+            handoff = build_handoff_request(run_id=parsed.run_id, parent_task_id='admission',
+                parent_attempt_id='admission', failure_code='BLOCKED_HORIZON_PREREQ_MISSING',
+                request_artifact_root='admission', handoff_context={'delivery_profile':spec['profile'],
+                    'delivery_spec_digest':digest_value(spec), 'prerequisite_node_id':spec['prerequisite_id']})
+            validate_task_routes(registry, handoff['executor_adapter'], handoff['auditor_adapter'])
+            validate_binding(registry, handoff)
+    return data
+
+
 def submit(config, request, data, parsed):
     if os.geteuid() != config['service_uid']:
         raise ValueError('submission must run as configured service identity')
+    prerequisite_bytes = prerequisites(config, request, parsed)
+    from harness_adapters.registry import load_registry_config, validate_task_routes
+    registry = load_registry_config(Path(config['adapter_config']), validate_executables=False)
+    validate_task_routes(registry, registry['routes']['default_executor'], registry['routes']['default_auditor'])
     parent = request.get('existing_parent')
     if parent is not None and (not isinstance(parent, str) or not RUN.fullmatch(parent)):
         raise ValueError('invalid existing parent')
@@ -168,6 +209,8 @@ def submit(config, request, data, parsed):
         'task_ids': [w.task_id for w in parsed.workstreams], 'existing_parent': parent,
         'artifact_root': str(artifact), 'release_commit': config['release_commit'],
         'release_manifest_sha256': config['release_manifest_sha256'], 'consumer_digest': digest(encoded(config))}
+    if prerequisite_bytes is not None:
+        identity['prerequisites_sha256'] = digest(prerequisite_bytes)
     key = digest(encoded([identity['prompt_sha256'], parent]))
     directory = Path(config['journal_root']) / key
     directory.mkdir(mode=0o700, exist_ok=True)
@@ -192,6 +235,12 @@ def submit(config, request, data, parsed):
             raise ValueError('immutable prompt conflict')
         if not snapshot.exists():
             atomic(snapshot, data)
+        prerequisite_snapshot = directory / 'prerequisites.json'
+        if prerequisite_bytes is not None:
+            if prerequisite_snapshot.exists() and trusted(prerequisite_snapshot).read_bytes() != prerequisite_bytes:
+                raise ValueError('immutable prerequisite conflict')
+            if not prerequisite_snapshot.exists():
+                atomic(prerequisite_snapshot, prerequisite_bytes)
         result_file = directory / 'receipt.json'
         if result_file.exists():
             return receipt(trusted(result_file).read_bytes(), identity)
@@ -233,6 +282,10 @@ def submit(config, request, data, parsed):
             '--artifact-root', str(artifact), '--adapter-config', config['adapter_config']]
         if parent:
             command += ['--existing-parent', parent, '--runtime-artifact-root', str(root / parent / 'artifacts')]
+        if prerequisite_bytes is not None:
+            command += ['--prerequisites-json', str(prerequisite_snapshot)]
+        if registry.get('qualification_profile'):
+            command += ['--qualification-profile', registry['qualification_profile']]
         atomic(state_file, {'state': 'dispatch_intent', 'request_id': key})
         atomic(fence, {'request_id': key, 'identity_sha256': digest(encoded(identity))})
         # One call only. systemd may outlive timeout/process death: retain intent.
@@ -260,7 +313,7 @@ def submit(config, request, data, parsed):
 def handle(config, request, uid):
     if uid not in config['allowed_uids']:
         return {'status':'denied', 'reason':'peer_not_allowed'}
-    if not isinstance(request, dict) or set(request) - {'operation','prompt_path','prompt_sha256','artifact_root','existing_parent','dry_run'}:
+    if not isinstance(request, dict) or set(request) - {'operation','prompt_path','prompt_sha256','artifact_root','existing_parent','dry_run','prerequisites_path','prerequisites_sha256'}:
         raise ValueError('unknown request fields')
     operation = request.get('operation')
     if 'dry_run' in request and operation != 'execute-recovery':
@@ -274,9 +327,13 @@ def handle(config, request, uid):
         raise ValueError('unknown operation')
     data, parsed = prompt(config, request)
     if operation == 'inspect':
-        return {'status':'ok','mode':'inspect','run_id':parsed.run_id,'prompt_digest':digest(data),
+        extra = prerequisites(config, request, parsed)
+        result = {'status':'ok','mode':'inspect','run_id':parsed.run_id,'prompt_digest':digest(data),
             'title':parsed.title,'task_ids':[w.task_id for w in parsed.workstreams],
             'workstream_count':len(parsed.workstreams),'release_commit':config['release_commit']}
+        if extra is not None:
+            result['prerequisites_sha256'] = digest(extra)
+        return result
     if not config['enabled']:
         return {'status':'blocked','reason':'durable_submission_disabled'}
     return submit(config, request, data, parsed)
@@ -349,12 +406,16 @@ def main(entry, argv=None):
     if entry == 'top-delivery-submit':
         parser.add_argument('--inspect', '--dry-run', action='store_true')
         parser.add_argument('prompt', type=Path)
+        parser.add_argument('--artifact-root')
+        parser.add_argument('--existing-parent')
     else:
         parser.add_argument('operation', choices=['health','inspect','submit','execute-recovery'])
         parser.add_argument('--prompt', type=Path)
         parser.add_argument('--artifact-root')
         parser.add_argument('--existing-parent')
         parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--prerequisites-json', type=Path)
+    parser.add_argument('--prerequisites-sha256')
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
@@ -367,10 +428,14 @@ def main(entry, argv=None):
                 raise ValueError('prompt required')
             source = trusted(args.prompt)
             request.update(prompt_path=str(source), prompt_sha256=digest(source.read_bytes()))
+        for key in ('artifact_root','existing_parent'):
+            if getattr(args, key):
+                request[key] = getattr(args, key)
+        if args.prerequisites_json is not None or args.prerequisites_sha256 is not None:
+            if operation not in {'inspect', 'submit'} or args.prerequisites_json is None or args.prerequisites_sha256 is None:
+                raise ValueError('prerequisite path and hash required for submit or inspect')
+            request.update(prerequisites_path=str(args.prerequisites_json.absolute()), prerequisites_sha256=args.prerequisites_sha256)
         if entry != 'top-delivery-submit':
-            for key in ('artifact_root','existing_parent'):
-                if getattr(args, key):
-                    request[key] = getattr(args, key)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                 client.settimeout(130)
                 client.connect(config['socket_path'])

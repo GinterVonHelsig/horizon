@@ -1,5 +1,10 @@
 # Combined repair: preparation, operator activation and rollback — Comms-01
 
+The staged-only qualification interfaces and five-session isolated runner are
+documented in [qualification-interfaces.md](qualification-interfaces.md). Keep
+`qualification_profile` absent in production; no installation, schema change or
+activation is implied by preparation of that separately authorized disposable run.
+
 This procedure covers the **entire combined repair**, not only the last
 admission-only patch. It is not deployment authority. Source preparation, passing
 simulated tests and schema metadata inspection do not permit installation,

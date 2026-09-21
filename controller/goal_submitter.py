@@ -30,6 +30,7 @@ class TaskRoutingSnapshot:
 
     executor_adapter: str
     auditor_adapter: str
+    qualification_profile: str | None = None
 
     def __post_init__(self) -> None:
         if not self.executor_adapter or not self.auditor_adapter:
@@ -296,6 +297,8 @@ class GoalSubmitter:
         if self._task_routing is not None:
             payload["executor_adapter"] = self._task_routing.executor_adapter
             payload["auditor_adapter"] = self._task_routing.auditor_adapter
+            if self._task_routing.qualification_profile is not None:
+                payload['qualification_profile'] = self._task_routing.qualification_profile
         if str(workstream.number) in self._prerequisites:
             payload["prerequisites"] = self._prerequisites[str(workstream.number)]
         return payload

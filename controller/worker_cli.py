@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default=os.environ.get("TOP_DELIVERY_ADAPTER_CONFIG"))
     parser.add_argument("--poll-interval", type=float, default=float(os.environ.get("TOP_DELIVERY_WORKER_POLL_SECONDS", "5")))
     parser.add_argument("--once", action="store_true")
+    parser.add_argument('--qualification-profile', choices=['cursor-disposable-v1'])
     parser.add_argument("--expected-task-id", default=None)
     parser.add_argument("--health-dir", default=os.environ.get("TOP_DELIVERY_WORKER_HEALTH_DIR", "/var/lib/top-delivery/worker-health"))
     parser.add_argument("--recover-block", action="store_true")
@@ -60,6 +61,10 @@ def _main(argv: list[str] | None = None) -> int:
 
     artifact_root = Path(args.artifact_root).resolve()
     config = load_registry_config(Path(args.config), validate_executables=False)
+    from model_routing import load_model_routing
+    from qualification_profile import worker_policy
+    policy = worker_policy(load_model_routing(Path(__file__).resolve().parents[1] / 'architecture/model-routing.yaml'),
+                           config, args.qualification_profile, args.db_url)
     registry = AdapterRegistry.from_config(
         config,
         artifact_dir=artifact_root / "adapter-runtime",
@@ -68,6 +73,7 @@ def _main(argv: list[str] | None = None) -> int:
     import psycopg2
     try:
         controller = build_controller(args.db_url, artifact_root)
+        controller.adapter_config = config
     except (psycopg2.OperationalError, psycopg2.InterfaceError):
         state = health.fail(scope, reason="database_unavailable", permanent=False)
         print(json.dumps({"status": "blocked" if state["blocked"] else "retry_pending", **state}))
@@ -99,7 +105,7 @@ def _main(argv: list[str] | None = None) -> int:
         worktree_transport=transport,
         transport_owner=args.owner,
         adapter_config=config,
-        routing_policy=load_model_routing(Path(__file__).resolve().parents[1] / "architecture/model-routing.yaml"),
+        routing_policy=policy,
     )
     loop = WorkerLoop(
         worker,

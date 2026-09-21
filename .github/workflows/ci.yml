@@ -36,6 +36,8 @@ jobs:
             tests/test_external_review_execution.py \
             tests/test_review_release_package.py \
             tests/test_submission_release_package.py \
+            tests/test_qualification_profile.py \
+            tests/test_qualification_client.py \
             tests/test_cli_adapters.py \
             tests/test_http_adapters.py \
             tests/test_f2_model_identity.py \
@@ -92,6 +94,8 @@ jobs:
             controller/test_bounded_delivery.py \
             controller/test_goal_completion.py \
             controller/test_historical_upgrade.py \
+            controller/test_packaged_qualification.py \
+            tests/test_qualification_runner.py \
             controller/test_fixture_isolation.py \
             controller/test_source_delivery.py \
             controller/test_subworkflow_handoff.py \

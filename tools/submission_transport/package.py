@@ -16,6 +16,7 @@ def stage(output, allow_uncommitted=False):
         and not any(p in {'test_only','tests','__pycache__'} or p.startswith('test_') or p == 'conftest.py' for p in Path(name).parts)]
     sources += ['architecture/model-routing.yaml', *(f'tools/submission_transport/{name}' for name in
         ('transport.py','package.py','consumer.example.json','host-gateway.service.in','PROVENANCE.md'))]
+    sources += [f'tools/qualification/{name}' for name in ('client.py','session_gate.py','jail.py')]
     files, dirty = {}, []
     for name in sources:
         path = ROOT / name

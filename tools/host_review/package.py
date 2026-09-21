@@ -10,7 +10,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 CONTROLLER = (
     'artifact_isolation.py', 'artifact_owner.py', 'auditor_bind.py',
-    'bounded_delivery.py', 'model_routing.py', 'prompt_ingest.py',
+    'bounded_delivery.py', 'model_routing.py', 'prompt_ingest.py', 'qualification_profile.py',
     'review_execution.py', 'source_test_recipe.py', 'submission_bundle.py',
     'subworkflow_handoff.py',
     *(f'harness_adapters/{name}.py' for name in (

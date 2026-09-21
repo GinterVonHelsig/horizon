@@ -96,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     submit_parser.add_argument("--artifact-root", default=None)
     submit_parser.add_argument("--database-url", default=None)
     submit_parser.add_argument("--prerequisites-json", type=Path)
+    submit_parser.add_argument('--qualification-profile', choices=['cursor-disposable-v1'])
     status_parser = subparsers.add_parser("status", help="read durable whole-goal status, not worker/task success")
     status_parser.add_argument("--run-id", required=True)
     status_parser.add_argument("--artifact-root", required=True)
@@ -140,6 +141,16 @@ def main(argv: list[str] | None = None) -> int:
             _emit(_inspect_payload(prompt_path))
             return 0
 
+        # Route/profile admission is before controller construction or artifact writes.
+        config = None
+        if args.adapter_config:
+            from harness_adapters.registry import load_registry_config
+            from qualification_profile import admit_profile
+            config = load_registry_config(Path(args.adapter_config), validate_executables=False)
+            admit_profile(config, args.qualification_profile,
+                          _database_url_from_env(args.database_url) if not args.dry_run else 'postgresql://unused@127.0.0.1:5432/td_test_dry_run')
+        elif args.qualification_profile:
+            raise ValueError('qualification profile requires explicit registry')
         artifact_root = _artifact_root_from_env(args.artifact_root)
         runtime_root = _runtime_artifact_root(
             args.existing_parent,
@@ -162,20 +173,18 @@ def main(argv: list[str] | None = None) -> int:
             controller = build_controller(db_url, artifact_root, dry_run=False)
             mode = "durable"
         try:
+            if config is not None:
+                controller.adapter_config = config
             task_routing = None
             if args.adapter_config:
-                from harness_adapters.registry import load_registry_config
                 from goal_submitter import TaskRoutingSnapshot
-
-                config = load_registry_config(
-                    Path(args.adapter_config), validate_executables=False
-                )
                 routes = config["routes"]
                 from harness_adapters.registry import validate_task_routes
                 validate_task_routes(config, routes["default_executor"], routes["default_auditor"])
                 task_routing = TaskRoutingSnapshot(
                     executor_adapter=routes["default_executor"],
                     auditor_adapter=routes["default_auditor"],
+                    qualification_profile=args.qualification_profile,
                 )
             elif not args.dry_run:
                 raise ValueError("durable submission requires --adapter-config with independent executable routes")

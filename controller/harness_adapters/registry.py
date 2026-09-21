@@ -69,7 +69,7 @@ def _require_type(value: Any, expected: type, label: str) -> None:
 
 def validate_registry_config(config: dict[str, Any], *, validate_executables: bool = True) -> None:
     _require_type(config, dict, "registry config")
-    unknown = set(config) - {"adapters", "routes"}
+    unknown = set(config) - {"adapters", "routes", "qualification_profile"}
     if unknown:
         raise ValueError(f"unknown registry keys: {sorted(unknown)}")
     adapters = config.get("adapters")
@@ -184,6 +184,8 @@ def validate_registry_config(config: dict[str, Any], *, validate_executables: bo
         raise ValueError("meta-router models are forbidden for executor and auditor")
     if identities_conflict(executor_identity, auditor_identity):
         raise ValueError("executor and auditor must use distinct effective identities")
+    from qualification_profile import validate_profile
+    validate_profile(config)
 
 
 @dataclass

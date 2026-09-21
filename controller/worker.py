@@ -748,6 +748,8 @@ class TaskWorker:
         raise WorkerConfigurationError("task workstream metadata is required")
 
     def _resolve_routing(self, context: dict[str, Any]) -> tuple[str, str]:
+        if not context.get('delivery_profile') and context.get('qualification_profile') != (self._adapter_config or {}).get('qualification_profile'):
+            raise WorkerConfigurationError('task qualification profile differs from selected worker')
         allowed = {"executor_adapter", "auditor_adapter"}
         route = {key: context.get(key) for key in allowed}
         if not all(isinstance(value, str) and value for value in route.values()):
