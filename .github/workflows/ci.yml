@@ -79,6 +79,7 @@ jobs:
           sudo chown root:root /opt
           sudo chmod go-w /opt
           sudo install -o root -g root -d -m 700 /opt/horizon-q
+          sudo install -o root -g root -d -m 700 /root/horizon-recovery-ci-artifacts/qualification
           sudo namei -l /opt/horizon-q
       - name: Exercise real persistence with simulated model execution
         run: |
