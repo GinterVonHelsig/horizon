@@ -28,6 +28,7 @@ def config(tmp_path):
 import json,os,pathlib,socket,sys,time
 model=sys.argv[sys.argv.index('--model')+1]
 prompt=sys.argv[sys.argv.index('-p')+1]
+if prompt=='blank-lines': print('\\n  \\n')
 if prompt in {'timeout','orphan'}:
     if prompt=='orphan' and os.fork()==0:
         os.setsid()
@@ -100,6 +101,18 @@ def test_real_jail_five_sessions_restart_limit_and_readonly_review(config):
     assert len(state['sessions'])==5 and all(s['state']=='complete' for s in state['sessions'])
     assert not (Path(config['workspace_root'])/'task/forbidden-write').exists()
     broker.lock.close()
+
+
+def test_leading_blank_lines_use_the_same_validation_and_attribution_parser(config):
+    broker=gate.Gate(config)
+    try:
+        result=broker.request(request(config,prompt='blank-lines'))
+        assert result['exit']==0
+        sessions=json.loads(broker.path.read_text())['sessions']
+        assert len(sessions)==1 and sessions[0]['state']=='complete'
+        assert sessions[0]['observed_model']=='composer-2.5'
+    finally:
+        broker.lock.close()
 
 
 @pytest.mark.parametrize('behavior',['timeout','orphan'])

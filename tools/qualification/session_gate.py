@@ -185,7 +185,7 @@ def validate_output(result, model):
     if result['exit']!=0:
         return False
     try:
-        events=[json.loads(line) for line in result['stdout'].splitlines() if line]
+        events=[json.loads(line) for line in result['stdout'].splitlines() if line.strip()]
         init=[e for e in events if e.get('type')=='system' and e.get('subtype')=='init']
         aliases={'composer-2.5':{'composer-2.5','Composer 2.5'},
                  'cursor-grok-4.6-high':{'cursor-grok-4.6-high','Cursor Grok 4.6 High'}}
@@ -237,7 +237,7 @@ class Gate:
                       elapsed_seconds=time.time()-record['started_at'],exit=result['exit'],
                       stdout_sha256=digest(result['stdout'].encode()))
         if record['state']=='complete':
-            init=next(e for e in map(json.loads,result['stdout'].splitlines())
+            init=next(e for e in (json.loads(line) for line in result['stdout'].splitlines() if line.strip())
                       if e.get('type')=='system' and e.get('subtype')=='init')
             record.update(observed_model=init['model'],execution=self.config['execution'],
                           runtime_inventory_sha256=inventory_digest(self.config['runtime_files']))
