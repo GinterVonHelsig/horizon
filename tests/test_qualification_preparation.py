@@ -1,8 +1,10 @@
 """Review regression: immutable prepared plan and frozen public runtime only."""
+import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -22,6 +24,18 @@ def isolated():
     require_isolation(os.environ.get('TOP_DELIVERY_PG_ADMIN_URL',''))
 
 
+@pytest.fixture
+def short_socket_root(tmp_path):
+    token=hashlib.sha256(os.fsencode(str(tmp_path))).hexdigest()[:16]
+    configured_base=os.environ.get('HORIZON_TEST_SOCKET_BASE')
+    root=Path(configured_base or '/tmp')/(token if configured_base else 'horizon-qual-'+token)
+    root.mkdir(mode=0o700)
+    try:
+        yield root
+    finally:
+        shutil.rmtree(root)
+
+
 def test_installed_pid_markers_never_enter_frozen_public_payload(tmp_path):
     source=tmp_path/'installed'; source.mkdir()
     (source/'index.js').write_text('public vendor code')
@@ -38,12 +52,12 @@ def test_installed_pid_markers_never_enter_frozen_public_payload(tmp_path):
 
 
 @pytest.mark.parametrize('extra',['.running/123','cache/session.json','unlisted.js'])
-def test_frozen_runtime_rejects_unlisted_state_before_prepared_receipt(tmp_path,extra):
-    for name in ('state','socket','workspaces','runtime'): (tmp_path/name).mkdir(mode=0o700)
+def test_frozen_runtime_rejects_unlisted_state_before_prepared_receipt(tmp_path,short_socket_root,extra):
+    for name in ('state','workspaces','runtime'): (tmp_path/name).mkdir(mode=0o700)
     (tmp_path/'auth.json').write_text('{}')
     binary=tmp_path/'runtime/cursor-agent'; binary.write_text('simulated public payload')
-    config={'schema':'horizon-qualification.v1','execution':'simulated','socket':str(tmp_path/'socket/b.sock'),
-        'socket_root':str(tmp_path/'socket'),'state_root':str(tmp_path/'state'),
+    config={'schema':'horizon-qualification.v1','execution':'simulated','socket':str(short_socket_root/'b.sock'),
+        'socket_root':str(short_socket_root),'state_root':str(tmp_path/'state'),
         'workspace_root':str(tmp_path/'workspaces'),
         'runtime_root':str(tmp_path/'runtime'),'runtime_entry':'cursor-agent',
         'runtime_files':{'cursor-agent':gate.digest(binary.read_bytes())},'auth_file':str(tmp_path/'auth.json'),
@@ -57,11 +71,11 @@ def test_frozen_runtime_rejects_unlisted_state_before_prepared_receipt(tmp_path,
 
 
 @pytest.mark.parametrize('fault',['gate_bytes','auth_reference','runtime_inventory','simulated_execution','socket_binding','submission_binding','endpoint_length','prepared_bytes'])
-def test_authorization_binds_gate_inventory_auth_and_live_semantics(tmp_path,fault):
-    socket_path=tmp_path/'b.sock'
-    submission_path=tmp_path/'g.sock'
+def test_authorization_binds_gate_inventory_auth_and_live_semantics(tmp_path,short_socket_root,fault):
+    socket_path=short_socket_root/'b.sock'
+    submission_path=short_socket_root/'g.sock'
     config={'execution':'cursor-subscription','auth_file':str(tmp_path/'auth.json'),
-            'socket':str(socket_path),'socket_root':str(tmp_path),
+            'socket':str(socket_path),'socket_root':str(short_socket_root),
             'runtime_files':{'cursor-agent':'a'*64}}
     path=tmp_path/'gate.json'; prepare.durable_json(path,config)
     endpoints={
@@ -84,8 +98,8 @@ def test_authorization_binds_gate_inventory_auth_and_live_semantics(tmp_path,fau
     if fault=='auth_reference': config['auth_file']=str(tmp_path/'different-auth.json')
     if fault=='runtime_inventory': config['runtime_files']['cursor-agent']='b'*64
     if fault=='simulated_execution': config['execution']='simulated'
-    if fault=='socket_binding': config['socket']=str(tmp_path/'different.sock')
-    if fault=='submission_binding': value['submission_socket']=str(tmp_path/'different-g.sock')
+    if fault=='socket_binding': config['socket']=str(short_socket_root/'different.sock')
+    if fault=='submission_binding': value['submission_socket']=str(short_socket_root/'different-g.sock')
     if fault=='endpoint_length': value['socket_endpoints']['submission_listener']['encoded_bytes']+=1
     if fault in {'auth_reference','runtime_inventory','simulated_execution','socket_binding'}:
         path.write_text(json.dumps(config))

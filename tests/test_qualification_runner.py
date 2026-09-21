@@ -1,8 +1,10 @@
 """Disposable namespaces and SIMULATED subprocesses only; no Cursor calls."""
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import socket
 import subprocess
@@ -21,8 +23,12 @@ spec.loader.exec_module(gate)
 @pytest.fixture
 def config(tmp_path):
     require_isolation(os.environ.get('TOP_DELIVERY_PG_ADMIN_URL',''))
-    for name in ('state','socket','workspaces','runtime'):
+    for name in ('state','workspaces','runtime'):
         (tmp_path/name).mkdir(mode=0o700)
+    token=hashlib.sha256(os.fsencode(str(tmp_path))).hexdigest()[:16]
+    configured_base=os.environ.get('HORIZON_TEST_SOCKET_BASE')
+    socket_root=Path(configured_base or '/tmp')/(token if configured_base else 'horizon-qual-'+token)
+    socket_root.mkdir(mode=0o700)
     (tmp_path/'workspaces/task').mkdir()
     (tmp_path/'auth.json').write_text('{}')  # dummy, never existing authentication
     executable=tmp_path/'runtime/cursor-agent'
@@ -67,14 +73,17 @@ print(json.dumps({'type':'result','subtype':'success','is_error':False}))
 ''')
     executable.chmod(0o755)
     value={'schema':'horizon-qualification.v1','execution':'simulated',
-           'socket':str(tmp_path/'socket/b.sock'),'socket_root':str(tmp_path/'socket'),
+           'socket':str(socket_root/'b.sock'),'socket_root':str(socket_root),
            'state_root':str(tmp_path/'state'),
            'workspace_root':str(tmp_path/'workspaces'),'runtime_root':str(tmp_path/'runtime'),
            'runtime_entry':'cursor-agent','runtime_files':{'cursor-agent':gate.digest(executable.read_bytes())},
            'auth_file':str(tmp_path/'auth.json'),'subscription_only':True,'on_demand_disabled':True}
     (tmp_path/'config.json').write_text(json.dumps(value))
     assert gate.load_config(tmp_path/'config.json')==value
-    return value
+    try:
+        yield value
+    finally:
+        shutil.rmtree(socket_root)
 
 
 def request(config, model='composer-2.5', prompt='probe'):
@@ -121,11 +130,14 @@ def test_overlong_or_stale_socket_rejected_before_ledger_write(config):
     while len(os.fsencode(str(original.parent/name/'b.sock')))<gate.SUN_PATH_BYTES:
         name+='x'
     overlong=original.parent/name; overlong.mkdir(mode=0o700)
-    changed={**config,'socket_root':str(overlong),'socket':str(overlong/'b.sock')}
-    path.write_text(json.dumps(changed))
-    assert len(os.fsencode(changed['socket']))>=gate.SUN_PATH_BYTES
-    with pytest.raises(ValueError,match='sockaddr_un'): gate.load_config(path)
-    assert not (Path(config['state_root'])/'sessions.json').exists()
+    try:
+        changed={**config,'socket_root':str(overlong),'socket':str(overlong/'b.sock')}
+        path.write_text(json.dumps(changed))
+        assert len(os.fsencode(changed['socket']))>=gate.SUN_PATH_BYTES
+        with pytest.raises(ValueError,match='sockaddr_un'): gate.load_config(path)
+        assert not (Path(config['state_root'])/'sessions.json').exists()
+    finally:
+        overlong.rmdir()
     Path(config['socket']).write_text('collision evidence')
     path.write_text(json.dumps(config))
     with pytest.raises(ValueError,match='collision'): gate.load_config(path)
@@ -138,13 +150,15 @@ def test_socket_runtime_permissions_and_separation_fail_closed(config):
     with pytest.raises(ValueError,match='private'): gate.load_config(path)
     assert not (Path(config['state_root'])/'sessions.json').exists()
     root.chmod(0o700)
-    changed={**config,'socket_root':config['state_root'],
-             'socket':str(Path(config['state_root'])/'b.sock')}
+    changed={**config,'state_root':config['socket_root'],
+             'socket_root':config['socket_root'],
+             'socket':str(Path(config['socket_root'])/'b.sock')}
     path.write_text(json.dumps(changed))
     with pytest.raises(ValueError,match='separate private runtime'): gate.load_config(path)
     assert not (Path(config['state_root'])/'sessions.json').exists()
-    nested=Path(config['state_root'])/'nested'; nested.mkdir(mode=0o700)
-    changed={**config,'socket_root':str(nested),'socket':str(nested/'b.sock')}
+    nested=Path(config['socket_root'])/'nested'; nested.mkdir(mode=0o700)
+    changed={**config,'state_root':config['socket_root'],
+             'socket_root':str(nested),'socket':str(nested/'b.sock')}
     path.write_text(json.dumps(changed))
     with pytest.raises(ValueError,match='must not overlap'): gate.load_config(path)
     assert not (Path(config['state_root'])/'sessions.json').exists()
