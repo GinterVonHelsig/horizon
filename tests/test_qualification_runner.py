@@ -188,6 +188,33 @@ def test_jail_entry_with_dummy_auth_only(config):
     assert result.returncode==0, result.stderr
 
 
+def test_installed_cursor_helper_no_model_preflight_through_gate(config, tmp_path):
+    helper_value=os.environ.get('HORIZON_CURSOR_SANDBOX')
+    if not helper_value:
+        pytest.skip('real Cursor helper unavailable in CI; helper preflight remains unverified')
+    helper=Path(helper_value)
+    assert helper.is_file() and helper.stat().st_uid==0 and not (helper.stat().st_mode & 0o4000)
+    runtime=tmp_path/'runtime-real'; runtime.mkdir(mode=0o755)
+    shutil.copy2(helper,runtime/'cursorsandbox'); (runtime/'cursorsandbox').chmod(0o755)
+    staged_bwrap=helper.parent/'bwrap'
+    if staged_bwrap.exists():
+        shutil.copy2(staged_bwrap,runtime/'bwrap'); (runtime/'bwrap').chmod(0o755)
+    agent=runtime/'cursor-agent'
+    agent.write_text('''#!/usr/bin/python3 -I
+import json, pathlib, subprocess, sys
+policy=pathlib.Path.cwd()/'sandbox-policy.json'
+policy.write_text(json.dumps({'sandbox':{'type':'workspace_readonly','cwd':str(pathlib.Path.cwd())}}))
+r=subprocess.run(['/cursor-runtime/cursorsandbox','--policy',str(policy),'--preflight-only','/bin/true'],capture_output=True,text=True)
+if r.returncode:
+    pathlib.Path('helper-stderr').write_text(r.stderr); print(r.stderr,file=sys.stderr); raise SystemExit(78)
+print(json.dumps({'type':'result','subtype':'success','is_error':False}))
+'''); agent.chmod(0o755)
+    runtime_names=['cursor-agent','cursorsandbox'] + (['bwrap'] if (runtime/'bwrap').exists() else [])
+    value={**config,'runtime_root':str(runtime),'runtime_files':{name:gate.digest((runtime/name).read_bytes()) for name in runtime_names}}
+    result=gate.launch(value,str(Path(value['workspace_root'])/'task'),'composer-2.5','sandbox-preflight',300)
+    assert result['exit']==0, result
+
+
 def test_real_jail_five_sessions_restart_limit_and_readonly_review(config):
     for model in gate.MODELS:
         broker=gate.Gate(config)
