@@ -79,7 +79,6 @@ jobs:
           sudo chown root:root /opt
           sudo chmod go-w /opt
           sudo install -o root -g root -d -m 700 /opt/horizon-q
-          sudo install -o root -g root -d -m 700 /root/horizon-recovery-ci-artifacts/qualification
           sudo namei -l /opt/horizon-q
       - name: Exercise real persistence with simulated model execution
         run: |
@@ -91,7 +90,7 @@ jobs:
           sudo chmod -R go-w /root/horizon-recovery-ci
           sudo namei -l /root/horizon-recovery-ci/controller/migrations/versions/004_longspan_workflow.py
           sudo env PATH="$PATH" HORIZON_TEST_SOCKET_BASE=/opt/horizon-q bash -c 'cd /root/horizon-recovery-ci && exec bash scripts/test-recovery-isolated.sh "$@"' -- -q -ra --tb=short \
-            --basetemp=/root/horizon-recovery-ci-artifacts/qualification/intentionally-long-durable-pytest-root-matching-live-layout \
+            --basetemp=/tmp/horizon-qualification-intentionally-long-durable-pytest-root-matching-live-artifact-layout-0123456789abcdef0123456789abcdef \
             tests/test_review_remediation.py \
             tests/test_comms01_release_deploy.py \
             tests/test_worker.py \
