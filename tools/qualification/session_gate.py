@@ -57,6 +57,17 @@ def validate_socket_path(path):
     return path
 
 
+def sanitized_startup_failure(error):
+    """Return an inspectable reason without echoing configured paths or values."""
+    if isinstance(error, ValueError):
+        return str(error)
+    if isinstance(error, OSError):
+        return 'os_error_errno_'+str(error.errno)
+    if isinstance(error, KeyError):
+        return 'missing_configuration_field'
+    return 'invalid_configuration_type'
+
+
 def validate_prepared(path, expected, config_path):
     raw=trusted(path).read_bytes()
     if digest(raw)!=expected:
@@ -349,6 +360,6 @@ if __name__=='__main__':
                 if relative.is_absolute() or '..' in relative.parts or digest(trusted(package/relative).read_bytes())!=expected:
                     raise ValueError('staged broker package changed')
         serve(config)
-    except (ValueError,OSError,KeyError,TypeError):
-        print('qualification blocked: invalid or uncertain prepared state; no automatic retry',file=sys.stderr)
+    except (ValueError,OSError,KeyError,TypeError) as error:
+        print('qualification blocked: '+sanitized_startup_failure(error)+'; no automatic retry',file=sys.stderr)
         raise SystemExit(78)

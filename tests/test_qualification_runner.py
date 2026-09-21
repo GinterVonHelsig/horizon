@@ -243,6 +243,13 @@ def test_live_requires_explicit_invocation_and_on_demand_disabled(config):
     with pytest.raises(ValueError,match='subscription'): gate.load_config(path,authorize_live=True)
 
 
+def test_startup_failures_are_inspectable_without_echoing_paths():
+    assert gate.sanitized_startup_failure(ValueError('socket collision'))=='socket collision'
+    assert gate.sanitized_startup_failure(PermissionError(13,'denied','/secret/auth.json'))=='os_error_errno_13'
+    assert gate.sanitized_startup_failure(KeyError('auth_file'))=='missing_configuration_field'
+    assert '/secret' not in gate.sanitized_startup_failure(PermissionError(13,'denied','/secret/auth.json'))
+
+
 def test_reboot_or_interrupted_write_cannot_reset_deadline(config):
     broker=gate.Gate(config)
     path=broker.path; state=json.loads(path.read_text()); broker.lock.close()
