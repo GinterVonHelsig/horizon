@@ -20,6 +20,9 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('qualification_gate',ROOT/'tools/qualification/session_gate.py')
 gate=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
+jail_spec=importlib.util.spec_from_file_location('qualification_jail',ROOT/'tools/qualification/jail.py')
+jail=importlib.util.module_from_spec(jail_spec)
+jail_spec.loader.exec_module(jail)
 
 
 @pytest.fixture
@@ -207,12 +210,32 @@ policy.write_text(json.dumps({'sandbox':{'type':'workspace_readonly','cwd':str(p
 r=subprocess.run(['/cursor-runtime/cursorsandbox','--policy',str(policy),'--preflight-only','/bin/true'],capture_output=True,text=True)
 if r.returncode:
     pathlib.Path('helper-stderr').write_text(r.stderr); print(r.stderr,file=sys.stderr); raise SystemExit(78)
+print(json.dumps({'type':'system','subtype':'init','model':'composer-2.5','session_id':'HELPER-PREFLIGHT'}))
 print(json.dumps({'type':'result','subtype':'success','is_error':False}))
 '''); agent.chmod(0o755)
     runtime_names=['cursor-agent','cursorsandbox'] + (['bwrap'] if (runtime/'bwrap').exists() else [])
     value={**config,'runtime_root':str(runtime),'runtime_files':{name:gate.digest((runtime/name).read_bytes()) for name in runtime_names}}
-    result=gate.launch(value,str(Path(value['workspace_root'])/'task'),'composer-2.5','sandbox-preflight',300)
+    broker=gate.Gate(value)
+    result=broker.request({'model':'composer-2.5','prompt':'sandbox-preflight',
+                           'cwd':str(Path(value['workspace_root'])/'task')})
     assert result['exit']==0, result
+    state=json.loads(broker.path.read_text())
+    assert len(state['sessions'])==1
+    assert state['sessions'][0]['state']=='complete'
+    assert state['sessions'][0]['observed_model']=='composer-2.5'
+    assert state['sessions'][0]['child_diagnostic']=='no_child_diagnostics'
+    broker.lock.close()
+
+
+@pytest.mark.parametrize('stderr', ['pivot_root failed', 'detaching old root failed'])
+def test_pivot_and_oldroot_failures_are_confinement_diagnostics(stderr):
+    assert gate.child_diagnostic(stderr, 'process_exit', 78)=='confinement_startup_failure'
+
+
+def test_pivot_root_rejects_unknown_architecture_before_syscall(monkeypatch, tmp_path):
+    monkeypatch.setattr(jail.platform, 'machine', lambda: 'unsupported-test-arch')
+    with pytest.raises(OSError, match='unsupported architecture'):
+        jail.pivot_root_into(tmp_path)
 
 
 def test_real_jail_five_sessions_restart_limit_and_readonly_review(config):

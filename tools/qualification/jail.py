@@ -4,8 +4,10 @@ No installed mounts/files are changed: mount and PID namespaces are mandatory.
 Authentication is a read-only bind, never a copied credential.
 """
 import ctypes
+import errno
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import sys
@@ -17,7 +19,14 @@ def command(*args):
 
 
 def pivot_root_into(root):
-    """Make the private tmpfs root authoritative and detach the host root."""
+    """Make the private tmpfs root authoritative and detach the host root.
+
+    The syscall numbers below are deliberately guarded: this qualification
+    jail is currently supported only on x86_64.  An unknown architecture must
+    fail closed instead of invoking a different syscall by number.
+    """
+    if platform.machine() != 'x86_64':
+        raise OSError(errno.ENOTSUP, 'pivot_root unsupported architecture')
     libc = ctypes.CDLL(None, use_errno=True)
     os.chdir(root)
     (Path('oldroot')).mkdir()
@@ -26,10 +35,9 @@ def pivot_root_into(root):
     os.chdir('/')
     if libc.syscall(166, b'/oldroot', 2) != 0:  # umount2(MNT_DETACH)
         raise OSError(ctypes.get_errno(), 'detaching old root failed')
-    try:
-        Path('/oldroot').rmdir()
-    except OSError:
-        pass
+    # Removal is part of the confinement invariant.  Do not swallow failure:
+    # a reachable old root makes the child outcome unsafe and must stop setup.
+    Path('/oldroot').rmdir()
 
 
 def enter(config, cwd, model, prompt):

@@ -73,7 +73,8 @@ def child_diagnostic(stderr, reason, exit_code):
     text = str(stderr or '').lower()
     if any(value in text for value in ('permission denied', 'unauthorized', 'forbidden', 'authentication')):
         return 'authentication_or_permission_failure'
-    if any(value in text for value in ('unshare', 'mount', 'namespace', 'landlock', 'capability', 'chroot')):
+    if any(value in text for value in ('unshare', 'mount', 'namespace', 'landlock', 'capability',
+                                       'chroot', 'pivot_root', 'detaching old root', 'oldroot')):
         return 'confinement_startup_failure'
     if any(value in text for value in ('unknown option', 'invalid option', 'usage:')):
         return 'cursor_cli_argument_failure'

@@ -86,7 +86,8 @@ blocks rather than resetting the ledger.
 Workers/PostgreSQL use scripts/test-recovery-isolated.sh's
 private mount/network/PID namespaces and private trust/submission-store mounts.
 For a future live run the broker sits outside that private network namespace;
-only its socket is shared. Cursor gets a fresh mount/PID namespace and chroot,
+only its socket is shared. Cursor gets a fresh mount/PID namespace and a
+pivot-root jail that detaches the old root,
 one task workspace, pinned public runtime, and a read-only authentication-file
 bind. Existing homes/sessions, DB sockets, host submission store, broker ledger
 and checkout are not mounted. Only system binaries/libraries and public TLS
