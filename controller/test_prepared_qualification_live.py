@@ -4,6 +4,7 @@ Execution identity is a private test seam; actual Cursor/model use does not
 qualify installed systemd services, general Gateway or unified Comms Relay.
 """
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -39,6 +40,16 @@ def qualification_inputs():
         metadata=json.loads(manifest.read_text())
         if metadata['source_commit']!=sha or metadata['source_state']!='committed':
             raise ValueError('live qualification requires committed packages')
+        for name,expected in metadata['files'].items():
+            relative=Path(name)
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('package path escapes release')
+            target=manifest.parent/relative
+            if any(p.is_symlink() for p in (target,*target.parents)) or hashlib.sha256(target.read_bytes()).hexdigest()!=expected:
+                raise ValueError('package input changed before import')
+    spec=importlib.util.spec_from_file_location('prepared_gate',Path(value['submission_release'])/'tools/qualification/session_gate.py')
+    gate=importlib.util.module_from_spec(spec); spec.loader.exec_module(gate)
+    gate.validate_prepared(path,hashlib.sha256(raw).hexdigest(),value['gate_config'])
     return value
 
 

@@ -21,7 +21,7 @@ def enter(config, cwd, model, prompt):
     if any(os.readlink('/proc/self/ns/'+kind) == config['outer_'+kind] for kind in ('mnt','pid')):
         raise ValueError('private jail namespaces required')
     command('/usr/bin/mount', '--make-rprivate', '/')
-    root = Path(tempfile.mkdtemp(prefix='horizon-cursor-jail.'))
+    root = Path(tempfile.mkdtemp(prefix='jail-',dir=config['state_root']))
     command('/usr/bin/mount', '-t', 'tmpfs', '-o', 'mode=0700', 'tmpfs', str(root))
 
     def bind(source, destination, writable=False):
@@ -36,13 +36,18 @@ def enter(config, cwd, model, prompt):
         if not writable:
             command('/usr/bin/mount', '-o', 'remount,bind,ro,nosuid,nodev', str(target))
 
-    bind('/usr', '/usr')
+    for path in ('/usr/bin','/usr/lib','/usr/share/ca-certificates'):
+        bind(path,path)
+    if Path('/usr/lib64').is_symlink():
+        (root/'usr/lib64').symlink_to(os.readlink('/usr/lib64'))
+    elif Path('/usr/lib64').exists():
+        bind('/usr/lib64','/usr/lib64')
     for path in ('/lib', '/lib64', '/bin'):
         if Path(path).is_symlink():
             (root/path.lstrip('/')).symlink_to(os.readlink(path))
         elif Path(path).exists():
             bind(path,path)
-    for path in ('/etc/ssl', '/etc/resolv.conf', '/etc/hosts', '/etc/nsswitch.conf'):
+    for path in ('/etc/ssl/certs', '/etc/ssl/openssl.cnf', '/etc/resolv.conf', '/etc/hosts', '/etc/nsswitch.conf'):
         if path == '/etc/resolv.conf' and not Path(path).exists() and config['execution'] == 'simulated':
             # Private test /run deliberately hides the host resolver symlink.
             (root/'etc/resolv.conf').touch()

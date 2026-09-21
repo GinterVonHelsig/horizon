@@ -96,6 +96,7 @@ jobs:
             controller/test_historical_upgrade.py \
             controller/test_packaged_qualification.py \
             tests/test_qualification_runner.py \
+            tests/test_qualification_preparation.py \
             controller/test_fixture_isolation.py \
             controller/test_source_delivery.py \
             controller/test_subworkflow_handoff.py \

@@ -43,7 +43,9 @@ For a future live run the broker sits outside that private network namespace;
 only its socket is shared. Cursor gets a fresh mount/PID namespace and chroot,
 one task workspace, pinned public runtime, and a read-only authentication-file
 bind. Existing homes/sessions, DB sockets, host submission store, broker ledger
-and checkout are not mounted. Grok's workspace is read-only; capabilities are
+and checkout are not mounted. Only system binaries/libraries and public TLS
+certificates are mounted, never /etc/ssl/private or /usr/local. Jail scratch is
+under the private qualification state root. Grok's workspace is read-only; capabilities are
 dropped and no_new_privs enforced. Landlock ABI4+ denies TCP listeners and all
 TCP connects except443. **This is port confinement, not domain filtering.**
 Cursor's enabled tool sandbox and no-network/no-shell task instructions are
@@ -76,7 +78,12 @@ python3 tools/qualification/prepare.py \
 ```
 
 Destination must be new. This stages both committed packages and hash-pinned
-public runtime files; authentication is only referenced, never copied. It emits
+public runtime files selected by the committed vendor payload manifest; installed
+`.running` markers are explicitly excluded without reading or altering them.
+Frozen runtime inventory must match exactly; extra state/cache/files are rejected.
+Authentication is only referenced, never copied. Preparation durably fsyncs the
+gate and prepared receipt, which hash-binds gate bytes and canonical runtime
+inventory, plus authentication reference and both package manifests. It emits
 NOT_INVOKED prepared.json and SHA256. It launches no broker/model/migration/service.
 The next authority prompt must pin that hash and the exact reviewed commit.
 
@@ -84,7 +91,8 @@ Future commands below are **not authorized by this source/test pass**:
 
 ```sh
 python3 QUALIFICATION_ROOT/submission/tools/qualification/session_gate.py \
- --config QUALIFICATION_ROOT/gate.json --execute-authorized-live
+ --config QUALIFICATION_ROOT/gate.json --execute-authorized-live \
+ --prepared QUALIFICATION_ROOT/prepared.json --prepared-sha256 PREPARED_JSON_SHA256
 # Separate direct process; retain this broker's PID for bounded cleanup.
 HORIZON_PREPARED_QUALIFICATION=QUALIFICATION_ROOT/prepared.json \
 HORIZON_QUALIFICATION_AUTHORIZATION=operator-authorized:PREPARED_JSON_SHA256 \
@@ -99,6 +107,9 @@ invoke it. Initial submission is direct, repeat is socket; simulated coverage al
 reverses the initial path. Live authentication/model availability and compatibility
 with the new confinement remain unverified. On-Demand-disabled evidence is the
 operator's account-setting confirmation, not programmatic billing attestation.
+Both broker startup and the live opt-in verify the gate/runtime/auth binding.
+Live evidence additionally requires actual init models and pinned runtime inventory
+in each durable session record; an environment variable is not evidence of live execution.
 
 Stop at the first failure, nonzero result except initial handoff_waiting, model
 mismatch, missing evidence, failed verdict, uncertain intent or exceeded budget.

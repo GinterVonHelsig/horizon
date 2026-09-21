@@ -41,6 +41,31 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def inventory_digest(files):
+    return digest(json.dumps(files,sort_keys=True,separators=(',',':')).encode())
+
+
+def validate_prepared(path, expected, config_path):
+    raw=trusted(path).read_bytes()
+    if digest(raw)!=expected:
+        raise ValueError('prepared authorization digest mismatch')
+    prepared=json.loads(raw)
+    config_path=Path(config_path).absolute()
+    config_bytes=trusted(config_path).read_bytes()
+    config=json.loads(config_bytes)
+    if (prepared.get('schema')!='horizon-qualification-prepared.v1'
+            or prepared.get('status')!='NOT_INVOKED'
+            or prepared.get('gate_config')!=str(config_path)
+            or prepared.get('gate_sha256')!=digest(config_bytes)
+            or config.get('execution')!='cursor-subscription'
+            or config.get('auth_file')!=prepared.get('authentication_reference_only')
+            or prepared.get('runtime_inventory_sha256')!=inventory_digest(config.get('runtime_files'))
+            or prepared.get('maximum_sessions')!=5
+            or prepared.get('automatic_retries')!=0 or prepared.get('fallback_calls')!=0):
+        raise ValueError('prepared gate/runtime/auth binding mismatch')
+    return prepared
+
+
 def save(path, value):
     temporary = path.with_suffix('.pending')
     # A previous interrupted write is ambiguous; never erase it on restart.
@@ -63,6 +88,14 @@ def load_config(path, authorize_live=False):
         raise ValueError('unknown execution transport')
     if config['execution']=='cursor-subscription' and not authorize_live:
         raise ValueError('live qualification is not invoked')
+    if config['execution']=='simulated':
+        # A label cannot authorize a real runtime in a networked host process.
+        if {name for _,name in socket.if_nameindex()}!={'lo'} or not Path(config['auth_file']).is_relative_to('/tmp'):
+            raise ValueError('simulation requires isolated loopback and disposable authentication')
+        mounts={line.split(' - ',1)[0].split()[4]:line.split(' - ',1)[1].split()[0]
+                for line in Path('/proc/self/mountinfo').read_text().splitlines()}
+        if any(mounts.get(path)!='tmpfs' for path in ('/tmp','/run','/etc/top-delivery','/var/lib/top-delivery-submission-bundles')):
+            raise ValueError('simulation requires private disposable stores')
     if config['subscription_only'] is not True or config['on_demand_disabled'] is not True:
         raise ValueError('included subscription authorization required')
     for name in ('state_root','workspace_root','runtime_root'):
@@ -81,6 +114,13 @@ def load_config(path, authorize_live=False):
         raise ValueError('session state must be private')
     if not config['runtime_files'] or config['runtime_entry'] not in config['runtime_files']:
         raise ValueError('pinned runtime required')
+    runtime=Path(config['runtime_root'])
+    entries=list(runtime.rglob('*'))
+    allowed_dirs={str(p) for name in config['runtime_files'] for p in Path(name).parents}
+    if (any(p.is_symlink() or (not p.is_dir() and not p.is_file()) for p in entries)
+            or {str(p.relative_to(runtime)) for p in entries if p.is_file()}!=set(config['runtime_files'])
+            or any(str(p.relative_to(runtime)) not in allowed_dirs for p in entries if p.is_dir())):
+        raise ValueError('runtime inventory has missing or unlisted payload/state')
     for name, expected in config['runtime_files'].items():
         relative=Path(name)
         if relative.is_absolute() or '..' in relative.parts:
@@ -196,6 +236,11 @@ class Gate:
         record.update(state='complete' if validate_output(result,model) else 'uncertain',
                       elapsed_seconds=time.time()-record['started_at'],exit=result['exit'],
                       stdout_sha256=digest(result['stdout'].encode()))
+        if record['state']=='complete':
+            init=next(e for e in map(json.loads,result['stdout'].splitlines())
+                      if e.get('type')=='system' and e.get('subtype')=='init')
+            record.update(observed_model=init['model'],execution=self.config['execution'],
+                          runtime_inventory_sha256=inventory_digest(self.config['runtime_files']))
         save(self.path,state)
         if record['state']!='complete':
             return {'exit':78,'reason':'outcome_uncertain_no_replay','stdout':''}
@@ -241,5 +286,32 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True,type=Path)
     parser.add_argument('--execute-authorized-live',action='store_true')
+    parser.add_argument('--prepared',type=Path)
+    parser.add_argument('--prepared-sha256')
     args=parser.parse_args()
-    serve(load_config(args.config,args.execute_authorized_live))
+    try:
+        prepared=None
+        if args.execute_authorized_live:
+            if args.prepared is None or not args.prepared_sha256:
+                raise ValueError('exact prepared authorization required')
+            prepared=validate_prepared(args.prepared,args.prepared_sha256,args.config)
+        config=load_config(args.config,args.execute_authorized_live)
+        if config['execution']=='cursor-subscription':
+            if prepared is None:
+                raise ValueError('exact prepared authorization required')
+            package=Path(prepared['submission_release'])
+            manifest_bytes=trusted(package/'manifest.json').read_bytes()
+            manifest=json.loads(manifest_bytes)
+            if (digest(manifest_bytes)!=prepared['submission_release_manifest_sha256']
+                    or manifest['source_commit']!=prepared['source_commit']
+                    or manifest['source_state']!='committed'
+                    or Path(__file__).resolve()!=package/'tools/qualification/session_gate.py'):
+                raise ValueError('broker must be the authorized staged release')
+            for name, expected in manifest['files'].items():
+                relative=Path(name)
+                if relative.is_absolute() or '..' in relative.parts or digest(trusted(package/relative).read_bytes())!=expected:
+                    raise ValueError('staged broker package changed')
+        serve(config)
+    except (ValueError,OSError,KeyError,TypeError):
+        print('qualification blocked: invalid or uncertain prepared state; no automatic retry',file=sys.stderr)
+        raise SystemExit(78)

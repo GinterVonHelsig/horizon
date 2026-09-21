@@ -44,6 +44,8 @@ if prompt=='probe':
                 raise AssertionError('network boundary bypassed')
             except PermissionError: pass
     assert not pathlib.Path('/opt/operator-harness').exists()
+    assert not pathlib.Path('/etc/ssl/private').exists()
+    assert not pathlib.Path('/usr/local').exists()
     assert not pathlib.Path('/var/lib/top-delivery-submission-bundles').exists()
     assert not pathlib.Path('/etc/top-delivery').exists()
     assert not pathlib.Path('/run/postgresql').exists()
