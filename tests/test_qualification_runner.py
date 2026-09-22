@@ -365,6 +365,17 @@ def test_network_startup_diagnostics_are_allowlisted_without_persisting_text(std
     assert gate.child_diagnostic(stderr + ' bearer-token=do-not-persist', 'process_exit', 1) == expected
 
 
+@pytest.mark.parametrize(('stderr','expected'), [
+    ('API response HTTP 503', 'api_http_failure'),
+    ('open /cursor-home/.config: EACCES', 'filesystem_access_failure'),
+    ('sandbox setup: unshare failed with EPERM', 'sandbox_setup_failure'),
+    ('unknown option --bad-flag', 'cursor_cli_argument_failure'),
+])
+def test_startup_diagnostic_classes_are_bounded_and_secret_free(stderr, expected):
+    value = stderr + ' api_key=super-secret bearer-token=never-persist'
+    assert gate.child_diagnostic(value, 'process_exit', 1) == expected
+
+
 def test_real_launch_propagates_child_exit_and_records_diagnostic(config):
     broker=gate.Gate(config)
     try:

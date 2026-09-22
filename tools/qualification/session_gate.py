@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import selectors
 import socket
@@ -80,11 +81,19 @@ def child_diagnostic(stderr, reason, exit_code):
     if any(value in text for value in ('connection refused', 'connection reset',
                                        'network is unreachable', 'fetch failed')):
         return 'network_transport_failure'
+    if re.search(r'\b(?:401|403|404|408|409|429|500|502|503|504)\b', text) and any(
+            value in text for value in ('http', 'api', 'status', 'response')):
+        return 'api_http_failure'
+    if any(value in text for value in ('pivot_root', 'pivot root', 'detaching old root', 'oldroot', 'chroot')):
+        return 'confinement_startup_failure'
+    if any(value in text for value in ('sandbox', 'landlock', 'seccomp', 'unshare',
+                                       'mount', 'namespace', 'capability')):
+        return 'sandbox_setup_failure'
+    if any(value in text for value in ('eacces', 'eperm', 'enoent', 'enotdir',
+                                       'read-only file system', 'permission denied')):
+        return 'filesystem_access_failure'
     if any(value in text for value in ('permission denied', 'unauthorized', 'forbidden', 'authentication')):
         return 'authentication_or_permission_failure'
-    if any(value in text for value in ('unshare', 'mount', 'namespace', 'landlock', 'capability',
-                                       'chroot', 'pivot_root', 'detaching old root', 'oldroot')):
-        return 'confinement_startup_failure'
     if any(value in text for value in ('unknown option', 'invalid option', 'usage:')):
         return 'cursor_cli_argument_failure'
     if text:
