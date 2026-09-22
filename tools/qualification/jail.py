@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 
+CHILD_WORKSPACE = '/workspace'
+
 
 def command(*args):
     subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -89,13 +91,17 @@ def enter(config, cwd, model, prompt):
     for path in ('/dev/null','/dev/urandom','/dev/random'):
         bind(path, path, writable=True)
     bind(config['runtime_root'], '/cursor-runtime')
-    bind(cwd, cwd, writable=model == 'composer-2.5')
+    # Keep the durable host workspace path in the request/ledger, but expose a
+    # short private alias to the vendor. Cursor's trust marker slug replaces
+    # separators with hyphens without truncating; a long cwd would exceed
+    # Linux NAME_MAX during `.workspace-trusted` creation.
+    bind(cwd, CHILD_WORKSPACE, writable=model == 'composer-2.5')
     for name in ('tmp','proc','cursor-home','cache'):
         (root/name).mkdir(mode=0o700, exist_ok=True)
     bind(config['auth_file'], '/cursor-home/.config/cursor/auth.json')
     command('/usr/bin/mount', '-t', 'proc', '-o', 'nosuid,nodev,noexec', 'proc', str(root/'proc'))
     pivot_root_into(root)
-    os.chdir(cwd)
+    os.chdir(CHILD_WORKSPACE)
     libc = ctypes.CDLL(None, use_errno=True)
     # Root inside the jail has no capabilities and cannot acquire them via exec.
     for cap in range(41):

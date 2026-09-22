@@ -38,7 +38,7 @@ def config(tmp_path):
     (tmp_path/'auth.json').write_text('{}')  # dummy, never existing authentication
     executable=tmp_path/'runtime/cursor-agent'
     executable.write_text('''#!/usr/bin/python3 -I
-import grp,json,os,pathlib,pwd,socket,sys,time
+import grp,hashlib,json,os,pathlib,pwd,re,socket,sys,time
 model=sys.argv[sys.argv.index('--model')+1]
 prompt=sys.argv[sys.argv.index('-p')+1]
 if prompt=='blank-lines': print('\\n  \\n')
@@ -52,6 +52,12 @@ if prompt in {'timeout','orphan'}:
     time.sleep(60)
 if prompt=='probe':
     assert os.getuid()==65534 and os.getgid()==65534
+    assert pathlib.Path.cwd()==pathlib.Path('/workspace')
+    slug=re.sub(r'-+','-',re.sub(r'[^a-zA-Z0-9]','-',str(pathlib.Path.cwd()))).strip('-')
+    trust_marker=pathlib.Path('/cursor-home/.cursor/projects')/slug/'.workspace-trusted'
+    trust_marker.parent.mkdir(parents=True,exist_ok=True)
+    trust_marker.write_text(json.dumps({'workspacePath':str(pathlib.Path.cwd())}))
+    assert trust_marker.is_file()
     assert pwd.getpwuid(65534).pw_name=='nobody'
     assert grp.getgrgid(65534).gr_name=='nogroup'
     assert pathlib.Path('/etc/subuid').read_text()==''
@@ -225,6 +231,20 @@ print(json.dumps({'type':'result','subtype':'success','is_error':False}))
     assert state['sessions'][0]['observed_model']=='composer-2.5'
     assert state['sessions'][0]['child_diagnostic']=='no_child_diagnostics'
     broker.lock.close()
+
+
+def test_long_durable_workspace_uses_short_child_alias_and_preserves_ledger_path(config):
+    long_workspace=Path(config['workspace_root'])/('a'*100)/('b'*100)/'task'
+    long_workspace.mkdir(parents=True)
+    broker=gate.Gate(config)
+    try:
+        result=broker.request({'model':'composer-2.5','prompt':'probe','cwd':str(long_workspace)})
+        assert result['exit']==0
+    finally:
+        broker.lock.close()
+    state=json.loads((Path(config['state_root'])/'sessions.json').read_text())
+    assert state['sessions'][0]['workspace']==str(long_workspace)
+    assert len(os.fsencode(str(long_workspace)))>255
 
 
 @pytest.mark.parametrize('stderr', ['pivot_root failed', 'detaching old root failed'])
