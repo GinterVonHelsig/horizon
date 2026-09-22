@@ -71,6 +71,15 @@ def sanitized_startup_failure(error):
 def child_diagnostic(stderr, reason, exit_code):
     """Classify bounded child diagnostics without persisting their contents."""
     text = str(stderr or '').lower()
+    if any(value in text for value in ('eai_again', 'enotfound', 'name or service not known',
+                                       'temporary failure in name resolution')):
+        return 'network_dns_failure'
+    if any(value in text for value in ('certificate verify failed', 'tls handshake',
+                                       'ssl_error', 'unable to verify the first certificate')):
+        return 'network_tls_failure'
+    if any(value in text for value in ('connection refused', 'connection reset',
+                                       'network is unreachable', 'fetch failed')):
+        return 'network_transport_failure'
     if any(value in text for value in ('permission denied', 'unauthorized', 'forbidden', 'authentication')):
         return 'authentication_or_permission_failure'
     if any(value in text for value in ('unshare', 'mount', 'namespace', 'landlock', 'capability',

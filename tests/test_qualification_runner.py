@@ -356,6 +356,15 @@ def test_child_failure_persists_sanitized_launch_diagnostic_without_replay(confi
     broker.lock.close()
 
 
+@pytest.mark.parametrize(('stderr','expected'), [
+    ('error: [unavailable] getaddrinfo EAI_AGAIN api2.cursor.sh', 'network_dns_failure'),
+    ('TypeError: unable to verify the first certificate', 'network_tls_failure'),
+    ('Fetch failed: connection reset by peer', 'network_transport_failure'),
+])
+def test_network_startup_diagnostics_are_allowlisted_without_persisting_text(stderr, expected):
+    assert gate.child_diagnostic(stderr + ' bearer-token=do-not-persist', 'process_exit', 1) == expected
+
+
 def test_real_launch_propagates_child_exit_and_records_diagnostic(config):
     broker=gate.Gate(config)
     try:
