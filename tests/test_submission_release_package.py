@@ -472,3 +472,14 @@ def test_canary_binding_fences_uid_run_and_workspace_inode(tmp_path, monkeypatch
         runtime.enforce_canary_binding(config, parsed, workspace / "artifacts")
     with pytest.raises(ValueError, match="run identity mismatch"):
         runtime.enforce_canary_binding(config, SimpleNamespace(run_id="goal-fedcba9876543210"), moved)
+
+
+def test_production_canary_policy_is_cursor_only_and_explicit() -> None:
+    from harness_adapters.registry import load_registry_config, validate_task_routes
+    path = Path(__file__).resolve().parents[1] / "systemd/adapters.gateway-delivery-production-canary.json.example"
+    config = load_registry_config(path, validate_executables=False)
+    validate_task_routes(config, config["routes"]["default_executor"], config["routes"]["default_auditor"])
+    assert "qualification_profile" not in config
+    assert {item["provider"] for item in config["adapters"]} == {"cursor"}
+    assert config["routes"]["default_auditor"] == "cursor-independent-review"
+    assert all(item.get("credential_env") == [] for item in config["adapters"])
