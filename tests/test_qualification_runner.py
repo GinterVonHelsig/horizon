@@ -293,6 +293,15 @@ def test_pivot_and_oldroot_failures_are_confinement_diagnostics(stderr):
     assert gate.child_diagnostic(stderr, 'process_exit', 78)=='confinement_startup_failure'
 
 
+def test_vendor_grok_catalog_display_name_is_accepted_only_for_exact_route():
+    result={'exit':0,'stdout':'\n'.join([
+        json.dumps({'type':'system','subtype':'init','model':'Grok 4.6'}),
+        json.dumps({'type':'result','subtype':'success','is_error':False}),
+    ]),'stderr':'','reason':'process_exit'}
+    assert gate.validate_output(result,'cursor-grok-4.6-high')
+    assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.7')},'cursor-grok-4.6-high')
+
+
 def test_pivot_root_rejects_unknown_architecture_before_syscall(monkeypatch, tmp_path):
     monkeypatch.setattr(jail.platform, 'machine', lambda: 'unsupported-test-arch')
     with pytest.raises(OSError, match='unsupported architecture'):

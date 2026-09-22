@@ -290,8 +290,11 @@ def validate_output(result, model):
     try:
         events=[json.loads(line) for line in result['stdout'].splitlines() if line.strip()]
         init=[e for e in events if e.get('type')=='system' and e.get('subtype')=='init']
+        # Cursor's catalog currently reports the exact requested Grok route as
+        # displayName ``Grok 4.6`` (while older builds emitted the longer label).
+        # Accept only these names for this exact model ID; never broaden by family.
         aliases={'composer-2.5':{'composer-2.5','Composer 2.5'},
-                 'cursor-grok-4.6-high':{'cursor-grok-4.6-high','Cursor Grok 4.6 High'}}
+                 'cursor-grok-4.6-high':{'cursor-grok-4.6-high','Cursor Grok 4.6 High','Grok 4.6'}}
         return (len(init)==1 and init[0].get('model') in aliases[model]
                 and events[-1].get('type')=='result' and events[-1].get('subtype')=='success'
                 and events[-1].get('is_error') is not True)
