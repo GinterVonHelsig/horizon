@@ -107,7 +107,11 @@ def test_disposable_delivery_and_bound_history(scenario, artifact_root):
     assert parent.task(handoff["provider_task_id"]).state == "verified"
     assert author.calls == reviewer.calls == 1
     assert 'BOUNDED DELIVERY EVIDENCE CONTRACT' in reviewer.prompts[0]
+    source_digest = hashlib.sha256(next(artifact_root.rglob(spec['filename'])).read_bytes()).hexdigest()
     assert '"name":"deliverable"' in reviewer.prompts[0]
+    assert '"sha256":"' + source_digest + '"' in reviewer.prompts[0]
+    assert 'exactly one object' in reviewer.prompts[0]
+    assert 'not the filename, specification, stdout, stderr, or any other name' in reviewer.prompts[0]
     assert spec['filename'] in reviewer.prompts[0]
     product = next(artifact_root.rglob("handoff-product.json"))
     request = json.loads((artifact_root / handoff["request_path"]).read_text())
