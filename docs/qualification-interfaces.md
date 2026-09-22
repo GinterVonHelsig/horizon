@@ -189,3 +189,12 @@ are `network_dns_failure`, `network_tls_failure`, `network_transport_failure`,
 contextual and first-match ordered so CLI usage errors and pivot/confinement
 errors cannot be relabeled by a generic `--sandbox` token. Any non-successful
 classification remains uncertain and blocks replay.
+
+The same ledger entry records `child_stdout_bytes` and an allowlisted
+`output_validation_reason`: `child_exit_nonzero`, `malformed_stream_json`,
+`malformed_event`, `missing_events`, `missing_or_duplicate_init`,
+`identity_mismatch`, `invalid_terminal_result`, or `valid`. The broker may return
+an empty stdout after an uncertain validation outcome, so the byte count describes
+the child stream before that fail-closed response; the stream itself is never
+persisted. These fields are diagnostic only and do not authorize replay or turn
+an uncertain outcome into success.

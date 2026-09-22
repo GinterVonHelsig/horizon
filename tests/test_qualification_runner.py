@@ -445,10 +445,38 @@ def test_child_failure_persists_sanitized_launch_diagnostic_without_replay(confi
     assert record['launch_reason']=='process_exit'
     assert record['child_diagnostic']=='authentication_or_permission_failure'
     assert record['child_stderr_bytes']==len(secret_stderr.encode())
+    assert record['child_stdout_bytes']==0
+    assert record['output_validation_reason']=='child_exit_nonzero'
     assert record['child_stderr_sha256']==gate.digest(secret_stderr.encode())
     serialized=(Path(config['state_root'])/'sessions.json').read_text()
     assert '/secret/auth.json' not in serialized
     assert 'bearer-token' not in serialized
+    broker=gate.Gate(config)
+    with pytest.raises(ValueError,match='outcome uncertain'):
+        broker.request(request(config))
+    broker.lock.close()
+
+
+@pytest.mark.parametrize(('stdout','stdout_bytes','reason'), [
+    ('null', 4, 'malformed_event'),
+    ('', 17, 'missing_events'),
+])
+def test_output_validation_diagnostics_persist_without_raw_stream_or_replay(config, monkeypatch, stdout, stdout_bytes, reason):
+    secret='{"token":"do-not-persist"}'
+    monkeypatch.setattr(gate, 'launch', lambda *args, **kwargs: {
+        'exit': 0, 'stdout': stdout, 'stdout_bytes': stdout_bytes,
+        'stderr': secret, 'stderr_bytes': len(secret.encode()), 'reason': 'process_exit'})
+    broker=gate.Gate(config)
+    try:
+        assert broker.request(request(config))['exit']==78
+    finally:
+        broker.lock.close()
+    record=json.loads((Path(config['state_root'])/'sessions.json').read_text())['sessions'][0]
+    assert record['state']=='uncertain'
+    assert record['child_stdout_bytes']==stdout_bytes
+    assert record['output_validation_reason']==reason
+    serialized=(Path(config['state_root'])/'sessions.json').read_text()
+    assert 'do-not-persist' not in serialized and 'token' not in serialized
     broker=gate.Gate(config)
     with pytest.raises(ValueError,match='outcome uncertain'):
         broker.request(request(config))
