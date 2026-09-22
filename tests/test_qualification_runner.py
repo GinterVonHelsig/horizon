@@ -298,11 +298,32 @@ def test_vendor_grok_catalog_display_name_is_accepted_only_for_exact_route():
         json.dumps({'type':'system','subtype':'init','model':'Grok 4.6'}),
         json.dumps({'type':'result','subtype':'success','is_error':False}),
     ]),'stderr':'','reason':'process_exit'}
-    assert gate.validate_output(result,'cursor-grok-4.6-high')
+    high_result={**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.6 High')}
+    assert gate.validate_output(high_result,'cursor-grok-4.6-high')
+    assert not gate.validate_output(high_result,'composer-2.5')
     assert not gate.validate_output(result,'composer-2.5')
-    assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.7')},'cursor-grok-4.6-high')
-    assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.6 Fast')},'cursor-grok-4.6-high')
-    assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.6 Extra High')},'cursor-grok-4.6-high')
+    for label in ('Grok 4.6','Grok 4.6 Low','Grok 4.6 Medium','Grok 4.6 Extra High','Grok 4.6 Fast','Grok 4.7'):
+        candidate={**result,'stdout':result['stdout'].replace('Grok 4.6',label)}
+        assert not gate.validate_output(candidate,'cursor-grok-4.6-high')
+
+
+def test_identity_mismatch_records_only_model_fingerprint(config, monkeypatch):
+    stdout='\n'.join([
+        json.dumps({'type':'system','subtype':'init','model':'Grok 4.6 High'}),
+        json.dumps({'type':'result','subtype':'success','is_error':False}),
+    ])
+    monkeypatch.setattr(gate, 'launch', lambda *args, **kwargs: {
+        'exit':0,'stdout':stdout,'stdout_bytes':len(stdout.encode()),'stderr':'','stderr_bytes':0,'reason':'process_exit'})
+    broker=gate.Gate(config)
+    try:
+        assert broker.request(request(config, model='composer-2.5'))['exit']==78
+    finally:
+        broker.lock.close()
+    record=json.loads((Path(config['state_root'])/'sessions.json').read_text())['sessions'][0]
+    assert record['output_validation_reason']=='identity_mismatch'
+    assert record['init_model_bytes']==len('Grok 4.6 High'.encode())
+    assert record['init_model_sha256']==gate.digest('Grok 4.6 High'.encode())
+    assert 'Grok 4.6 High' not in (Path(config['state_root'])/'sessions.json').read_text()
 
 
 @pytest.mark.parametrize(('stdout','model','expected'), [

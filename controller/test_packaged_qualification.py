@@ -213,7 +213,7 @@ def test_packaged_submission_to_durable_whole_goal(consumer, server, db_url, fir
         assert [s['model'] for s in sessions]==['composer-2.5','cursor-grok-4.6-high']*2
         if qualification_inputs:
             composer_labels={'composer-2.5','Composer 2.5'}
-            grok_labels={'cursor-grok-4.6-high','Cursor Grok 4.6 High','Grok 4.6'}
+            grok_labels={'cursor-grok-4.6-high','Cursor Grok 4.6 High','Grok 4.6 High'}
             for index, session in enumerate(sessions):
                 allowed=composer_labels if index % 2 == 0 else grok_labels
                 assert (session['execution']=='cursor-subscription'
@@ -239,7 +239,7 @@ def test_packaged_submission_to_durable_whole_goal(consumer, server, db_url, fir
         assert len(sessions)==5 and all(s['state']=='complete' for s in sessions)
         if qualification_inputs:
             assert sessions[-1]['execution']=='cursor-subscription'
-            assert sessions[-1]['observed_model'] in {'Cursor Grok 4.6 High','Grok 4.6'}
+            assert sessions[-1]['observed_model'] in {'Cursor Grok 4.6 High','Grok 4.6 High'}
             assert sessions[-1]['runtime_inventory_sha256']==qualification_inputs['runtime_inventory_sha256']
     finally:
         parent.close()

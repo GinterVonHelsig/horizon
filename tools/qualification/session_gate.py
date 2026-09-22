@@ -302,11 +302,11 @@ def output_validation_reason(result, model):
     if len(init)!=1:
         return 'missing_or_duplicate_init'
     try:
-        # Cursor's catalog currently reports the exact requested Grok route as
-        # displayName ``Grok 4.6`` (while older builds emitted the longer label).
-        # Accept only these names for this exact model ID; never broaden by family.
+        # Cursor derives this exact label from clientDisplayName ``Grok 4.6``
+        # plus the selected effort enum displayName ``High``. Accept only these
+        # names for this exact model ID; never broaden by family.
         aliases={'composer-2.5':{'composer-2.5','Composer 2.5'},
-                 'cursor-grok-4.6-high':{'cursor-grok-4.6-high','Cursor Grok 4.6 High','Grok 4.6'}}
+                 'cursor-grok-4.6-high':{'cursor-grok-4.6-high','Cursor Grok 4.6 High','Grok 4.6 High'}}
         if init[0].get('model') not in aliases[model]:
             return 'identity_mismatch'
         if (events[-1].get('type')!='result' or events[-1].get('subtype')!='success'
@@ -319,6 +319,23 @@ def output_validation_reason(result, model):
 
 def validate_output(result, model):
     return output_validation_reason(result, model)=='valid'
+
+
+def init_model_fingerprint(result):
+    """Return only bounded identity metadata from a parsed init event."""
+    if not isinstance(result.get('stdout'), str):
+        return None
+    try:
+        events=[json.loads(line) for line in result['stdout'].splitlines() if line.strip()]
+        init=[event for event in events if isinstance(event,dict)
+              and event.get('type')=='system' and event.get('subtype')=='init']
+        model=init[0].get('model') if len(init)==1 else None
+        if not isinstance(model,str):
+            return None
+        encoded=model.encode('utf-8')
+        return {'init_model_bytes':len(encoded),'init_model_sha256':digest(encoded)}
+    except (ValueError,TypeError,AttributeError):
+        return None
 
 
 class Gate:
@@ -370,6 +387,10 @@ class Gate:
                       child_stderr_sha256=digest(child_stderr.encode()),
                       child_stderr_bytes=result.get('stderr_bytes',len(child_stderr.encode())),
                       child_diagnostic=child_diagnostic(child_stderr,result.get('reason'),result.get('exit')))
+        if validation_reason=='identity_mismatch':
+            fingerprint=init_model_fingerprint(result)
+            if fingerprint:
+                record.update(fingerprint)
         if record['state']=='complete':
             init=next(e for e in (json.loads(line) for line in result['stdout'].splitlines() if line.strip())
                       if e.get('type')=='system' and e.get('subtype')=='init')
