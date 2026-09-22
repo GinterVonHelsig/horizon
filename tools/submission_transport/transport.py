@@ -117,6 +117,9 @@ def enforce_canary_binding(config, parsed, artifact_root):
         return
     if parsed.run_id != binding['run_id']:
         raise ValueError('canary run identity mismatch')
+    from harness_adapters.registry import load_registry_config, validate_task_routes
+    registry = load_registry_config(Path(config['adapter_config']), validate_executables=False)
+    validate_task_routes(registry, binding['executor_route'], binding['reviewer_route'])
     workspace = trusted(binding['workspace_root'], directory=True, private=True)
     info = workspace.stat()
     if (info.st_dev, info.st_ino) != (binding['workspace_dev'], binding['workspace_ino']):

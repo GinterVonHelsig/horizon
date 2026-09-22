@@ -448,7 +448,7 @@ def test_submission_template_preserves_privileged_host_gateway_compatibility() -
     assert config["allowed_uids"] == [0, 999]
 
 
-def test_canary_binding_fences_uid_run_and_workspace_inode(tmp_path):
+def test_canary_binding_fences_uid_run_and_workspace_inode(tmp_path, monkeypatch):
     from types import SimpleNamespace
     workspace = tmp_path / "canary"
     workspace.mkdir(mode=0o700)
@@ -458,6 +458,10 @@ def test_canary_binding_fences_uid_run_and_workspace_inode(tmp_path):
         "workspace_dev": info.st_dev, "workspace_ino": info.st_ino,
         "executor_route": "cursor-composer-canary", "reviewer_route": "cursor-grok-canary",
         "max_sessions": 5}}
+    config["adapter_config"] = str(tmp_path / "adapters.json")
+    import harness_adapters.registry as registry
+    monkeypatch.setattr(registry, "load_registry_config", lambda *a, **k: {})
+    monkeypatch.setattr(registry, "validate_task_routes", lambda *a, **k: None)
     parsed = SimpleNamespace(run_id="goal-0123456789abcdef")
     runtime.enforce_canary_binding(config, parsed, workspace / "artifacts")
     (workspace / "artifacts").mkdir()
