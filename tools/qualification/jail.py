@@ -91,11 +91,15 @@ def enter(config, cwd, model, prompt):
     for path in ('/dev/null','/dev/urandom','/dev/random'):
         bind(path, path, writable=True)
     bind(config['runtime_root'], '/cursor-runtime')
-    # Keep the durable host workspace path in the request/ledger, but expose a
-    # short private alias to the vendor. Cursor's trust marker slug replaces
-    # separators with hyphens without truncating; a long cwd would exceed
-    # Linux NAME_MAX during `.workspace-trusted` creation.
-    bind(cwd, CHILD_WORKSPACE, writable=model == 'composer-2.5')
+    # Keep the durable host workspace path in the request/ledger and preserve
+    # that exact absolute name for prompts which carry result/evidence paths.
+    # Also expose a short private alias to the vendor. Cursor's trust marker
+    # slug replaces separators with hyphens without truncating; a long cwd
+    # would exceed Linux NAME_MAX during `.workspace-trusted` creation. Both
+    # mounts target the same authorized directory and share its write policy.
+    writable = model == 'composer-2.5'
+    bind(cwd, cwd, writable=writable)
+    bind(cwd, CHILD_WORKSPACE, writable=writable)
     for name in ('tmp','proc','cursor-home','cache'):
         (root/name).mkdir(mode=0o700, exist_ok=True)
     bind(config['auth_file'], '/cursor-home/.config/cursor/auth.json')

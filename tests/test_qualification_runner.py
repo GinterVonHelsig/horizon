@@ -247,6 +247,32 @@ def test_long_durable_workspace_uses_short_child_alias_and_preserves_ledger_path
     assert len(os.fsencode(str(long_workspace)))>255
 
 
+def test_long_cursor_trust_slug_reproduces_enametoolong_before_alias(tmp_path):
+    durable = '/'+('/'.join(('opt','horizon-q') + ('x'*150, 'y'*150, 'task')))
+    slug = __import__('re').sub(r'-+', '-', __import__('re').sub(r'[^a-zA-Z0-9]', '-', durable)).strip('-')
+    assert len(os.fsencode(slug)) > 255
+    target = tmp_path/'projects'/slug
+    with pytest.raises(OSError) as error:
+        target.mkdir(parents=True)
+    assert error.value.errno == 36  # ENAMETOOLONG, the vendor trust-write failure
+
+
+def test_long_durable_workspace_grok_keeps_readonly_policy_and_ledger_path(config):
+    long_workspace=Path(config['workspace_root'])/('g'*100)/('h'*100)/'task'
+    long_workspace.mkdir(parents=True)
+    broker=gate.Gate(config)
+    try:
+        assert broker.request({'model':'composer-2.5','prompt':'probe','cwd':str(long_workspace)})['exit']==0
+        result=broker.request({'model':'cursor-grok-4.6-high','prompt':'probe','cwd':str(long_workspace)})
+        assert result['exit']==0
+    finally:
+        broker.lock.close()
+    state=json.loads((Path(config['state_root'])/'sessions.json').read_text())
+    assert state['sessions'][0]['workspace']==str(long_workspace)
+    assert state['sessions'][1]['workspace']==str(long_workspace)
+    assert state['sessions'][1]['model']=='cursor-grok-4.6-high'
+
+
 @pytest.mark.parametrize('stderr', ['pivot_root failed', 'detaching old root failed'])
 def test_pivot_and_oldroot_failures_are_confinement_diagnostics(stderr):
     assert gate.child_diagnostic(stderr, 'process_exit', 78)=='confinement_startup_failure'
