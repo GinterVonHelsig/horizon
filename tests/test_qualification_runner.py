@@ -273,6 +273,17 @@ def test_long_durable_workspace_grok_keeps_readonly_policy_and_ledger_path(confi
     assert state['sessions'][1]['model']=='cursor-grok-4.6-high'
 
 
+def test_parent_result_file_mapping_is_structured_and_rejects_neighbor_paths(tmp_path):
+    cwd=tmp_path/'work'; cwd.mkdir()
+    inside=cwd/'executor-result.json'
+    prompt=('BOUNDED WORKSTREAM ASSIGNMENT\n'+json.dumps({'result_file':str(inside),'literal':str(inside)+'-text'})+'\nTAIL')
+    mapped=jail.map_bounded_result_file(prompt,str(cwd))
+    assert '"result_file": "/workspace/executor-result.json"' in mapped
+    assert str(inside)+'-text' in mapped
+    with pytest.raises(ValueError,match='outside authorized workspace'):
+        jail.map_bounded_result_file('BOUNDED WORKSTREAM ASSIGNMENT\n'+json.dumps({'result_file':str(tmp_path/'neighbor.json')}),str(cwd))
+
+
 @pytest.mark.parametrize('stderr', ['pivot_root failed', 'detaching old root failed'])
 def test_pivot_and_oldroot_failures_are_confinement_diagnostics(stderr):
     assert gate.child_diagnostic(stderr, 'process_exit', 78)=='confinement_startup_failure'

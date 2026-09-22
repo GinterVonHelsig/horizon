@@ -16,6 +16,28 @@ import tempfile
 CHILD_WORKSPACE = '/workspace'
 
 
+def map_bounded_result_file(prompt, durable_cwd):
+    """Map only the structured parent result_file into the jailed alias."""
+    marker = 'BOUNDED WORKSTREAM ASSIGNMENT\n'
+    if not prompt.startswith(marker):
+        return prompt
+    remainder = prompt[len(marker):]
+    try:
+        assignment, end = json.JSONDecoder().raw_decode(remainder)
+    except (json.JSONDecodeError, TypeError):
+        return prompt
+    result_file = assignment.get('result_file') if isinstance(assignment, dict) else None
+    if not isinstance(result_file, str) or not Path(result_file).is_absolute():
+        return prompt
+    durable = Path(durable_cwd).resolve()
+    candidate = Path(result_file).resolve()
+    if not candidate.is_relative_to(durable):
+        raise ValueError('parent result_file is outside authorized workspace')
+    assignment['result_file'] = str(Path(CHILD_WORKSPACE) / candidate.relative_to(durable))
+    rebuilt = json.dumps(assignment, indent=2, sort_keys=True)
+    return marker + rebuilt + remainder[end:]
+
+
 def command(*args):
     subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -130,7 +152,8 @@ def enter(config, cwd, model, prompt):
             raise OSError('cannot enforce network confinement')
     finally:
         os.close(fd)
-    argv = ['/cursor-runtime/'+config['runtime_entry'], '-p', prompt,
+    child_prompt = map_bounded_result_file(prompt, cwd)
+    argv = ['/cursor-runtime/'+config['runtime_entry'], '-p', child_prompt,
             '--output-format','stream-json','--model',model,'--sandbox','enabled','--trust']
     argv += ['--mode','ask'] if model == 'cursor-grok-4.6-high' else ['--force']
     env = {'PATH':'/usr/bin:/bin','HOME':'/cursor-home','CURSOR_HOME':'/cursor-home',
