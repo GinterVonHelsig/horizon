@@ -92,7 +92,9 @@ def child_diagnostic(stderr, reason, exit_code):
         return 'authentication_or_permission_failure'
     if any(value in text for value in ('sandbox setup', 'sandbox initialization', 'sandbox policy',
                                        'sandbox helper', 'cursorsandbox', 'landlock', 'seccomp',
-                                       'unshare', 'mount namespace', 'capability drop')):
+                                       'unshare', 'mount namespace', 'capability drop',
+                                       'cannot drop capability bounding set',
+                                       'cannot drop jail privileges')):
         return 'sandbox_setup_failure'
     if any(value in text for value in ('eacces', 'eperm', 'enoent', 'enotdir',
                                        'read-only file system')):

@@ -380,6 +380,7 @@ def test_startup_diagnostic_classes_are_bounded_and_secret_free(stderr, expected
     ('API key rejected; retry number 503', 'child_process_failure'),
     ('unknown option --sandbox enabled', 'cursor_cli_argument_failure'),
     ('cursorsandbox preflight failed: EPERM', 'sandbox_setup_failure'),
+    ('cannot drop jail privileges', 'sandbox_setup_failure'),
 ])
 def test_diagnostic_context_does_not_shadow_cli_or_secrets(stderr, expected):
     assert gate.child_diagnostic(stderr + ' bearer-token=never-persist', 'process_exit', 1) == expected
