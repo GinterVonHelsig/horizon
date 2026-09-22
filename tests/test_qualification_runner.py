@@ -366,7 +366,7 @@ def test_network_startup_diagnostics_are_allowlisted_without_persisting_text(std
 
 
 @pytest.mark.parametrize(('stderr','expected'), [
-    ('API response HTTP 503', 'api_http_failure'),
+    ('HTTP 503 response from service', 'api_http_failure'),
     ('open /cursor-home/.config: EACCES', 'filesystem_access_failure'),
     ('sandbox setup: unshare failed with EPERM', 'sandbox_setup_failure'),
     ('unknown option --bad-flag', 'cursor_cli_argument_failure'),
@@ -374,6 +374,38 @@ def test_network_startup_diagnostics_are_allowlisted_without_persisting_text(std
 def test_startup_diagnostic_classes_are_bounded_and_secret_free(stderr, expected):
     value = stderr + ' api_key=super-secret bearer-token=never-persist'
     assert gate.child_diagnostic(value, 'process_exit', 1) == expected
+
+
+@pytest.mark.parametrize(('stderr','expected'), [
+    ('API key rejected; retry number 503', 'child_process_failure'),
+    ('unknown option --sandbox enabled', 'cursor_cli_argument_failure'),
+    ('cursorsandbox preflight failed: EPERM', 'sandbox_setup_failure'),
+])
+def test_diagnostic_context_does_not_shadow_cli_or_secrets(stderr, expected):
+    assert gate.child_diagnostic(stderr + ' bearer-token=never-persist', 'process_exit', 1) == expected
+
+
+@pytest.mark.parametrize('stderr', [
+    'HTTP 503 response bearer-token=secret',
+    'open /cache: EACCES api_key=secret',
+    'cursorsandbox preflight failed: EPERM bearer-token=secret',
+    'unknown option --sandbox api_key=secret',
+])
+def test_new_diagnostic_classes_persist_no_secret_and_block_replay(config, monkeypatch, stderr):
+    monkeypatch.setattr(gate, 'launch', lambda *args, **kwargs: {
+        'exit': 1, 'stdout': '', 'stderr': stderr, 'stderr_bytes': len(stderr.encode()),
+        'reason': 'process_exit'})
+    broker=gate.Gate(config)
+    try:
+        assert broker.request(request(config))['exit']==78
+    finally:
+        broker.lock.close()
+    serialized=(Path(config['state_root'])/'sessions.json').read_text()
+    assert 'secret' not in serialized and 'api_key' not in serialized and 'bearer-token' not in serialized
+    broker=gate.Gate(config)
+    with pytest.raises(ValueError,match='outcome uncertain'):
+        broker.request(request(config))
+    broker.lock.close()
 
 
 def test_real_launch_propagates_child_exit_and_records_diagnostic(config):

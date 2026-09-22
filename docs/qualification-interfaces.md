@@ -176,3 +176,16 @@ Package rollback does not undo021: preserve graph-enabled runs/intents and the
 legacy sequence grant. Old code must not process graph-enabled runs; restore the
 coordinated DB/artifact backup when required by existing compatibility conditions.
 General Gateway Delivery and unified Comms Relay remain outside this scope.
+
+### Bounded child diagnostic enum
+
+The qualification ledger stores only an allowlisted `child_diagnostic` code,
+stderr byte count, and SHA-256; it never stores child stderr text. Current codes
+are `network_dns_failure`, `network_tls_failure`, `network_transport_failure`,
+`api_http_failure`, `filesystem_access_failure`,
+`authentication_or_permission_failure`, `cursor_cli_argument_failure`,
+`sandbox_setup_failure`, `confinement_startup_failure`,
+`child_outcome_uncertain`, and the generic child-failure codes. Classification is
+contextual and first-match ordered so CLI usage errors and pivot/confinement
+errors cannot be relabeled by a generic `--sandbox` token. Any non-successful
+classification remains uncertain and blocks replay.
