@@ -272,34 +272,53 @@ def launch(config, cwd, model, prompt, timeout):
         proc.wait(timeout=max(.01,deadline-time.monotonic()))
         return {'exit':proc.returncode,'stdout':out.decode('utf-8',errors='strict'),
                 'stderr':stderr.decode('utf-8',errors='replace'),
-                'stderr_bytes':stderr_bytes,'reason':'process_exit'}
+                'stdout_bytes':len(out),'stderr_bytes':stderr_bytes,'reason':'process_exit'}
     except (TimeoutError,ValueError,subprocess.TimeoutExpired):
         try: os.killpg(proc.pid,signal.SIGKILL)
         except ProcessLookupError: pass
         proc.wait(timeout=10)
         return {'exit':78,'reason':'bounded_process_outcome_uncertain','stdout':'',
-                'stderr':stderr.decode('utf-8',errors='replace'),'stderr_bytes':stderr_bytes}
+                'stdout_bytes':len(out),'stderr':stderr.decode('utf-8',errors='replace'),
+                'stderr_bytes':stderr_bytes}
     finally:
         for stream in (proc.stdin,proc.stdout,proc.stderr):
             if not stream.closed: stream.close()
 
 
-def validate_output(result, model):
-    if result['exit']!=0:
-        return False
+def output_validation_reason(result, model):
+    if result.get('exit')!=0:
+        return 'child_exit_nonzero'
+    if not isinstance(result.get('stdout'), str):
+        return 'malformed_stream_json'
     try:
         events=[json.loads(line) for line in result['stdout'].splitlines() if line.strip()]
-        init=[e for e in events if e.get('type')=='system' and e.get('subtype')=='init']
+    except (ValueError,TypeError):
+        return 'malformed_stream_json'
+    if not events:
+        return 'missing_events'
+    if any(not isinstance(event, dict) for event in events):
+        return 'malformed_event'
+    init=[e for e in events if e.get('type')=='system' and e.get('subtype')=='init']
+    if len(init)!=1:
+        return 'missing_or_duplicate_init'
+    try:
         # Cursor's catalog currently reports the exact requested Grok route as
         # displayName ``Grok 4.6`` (while older builds emitted the longer label).
         # Accept only these names for this exact model ID; never broaden by family.
         aliases={'composer-2.5':{'composer-2.5','Composer 2.5'},
                  'cursor-grok-4.6-high':{'cursor-grok-4.6-high','Cursor Grok 4.6 High','Grok 4.6'}}
-        return (len(init)==1 and init[0].get('model') in aliases[model]
-                and events[-1].get('type')=='result' and events[-1].get('subtype')=='success'
-                and events[-1].get('is_error') is not True)
-    except (ValueError,TypeError,KeyError,IndexError,AttributeError):
-        return False
+        if init[0].get('model') not in aliases[model]:
+            return 'identity_mismatch'
+        if (events[-1].get('type')!='result' or events[-1].get('subtype')!='success'
+                or events[-1].get('is_error') is True):
+            return 'invalid_terminal_result'
+        return 'valid'
+    except (KeyError,IndexError,AttributeError,TypeError):
+        return 'malformed_event'
+
+
+def validate_output(result, model):
+    return output_validation_reason(result, model)=='valid'
 
 
 class Gate:
@@ -340,10 +359,13 @@ class Gate:
         save(self.path,state)  # Durable consumption BEFORE any child launch.
         result=launch(self.config,str(cwd),model,request['prompt'],LIMITS[index])
         child_stderr=result.get('stderr','')
-        record.update(state='complete' if validate_output(result,model) else 'uncertain',
+        validation_reason=output_validation_reason(result,model)
+        record.update(state='complete' if validation_reason=='valid' else 'uncertain',
                       elapsed_seconds=time.time()-record['started_at'],exit=result['exit'],
                       stdout_sha256=digest(result['stdout'].encode()),
+                      child_stdout_bytes=result.get('stdout_bytes',len(result['stdout'].encode())),
                       launch_reason=result.get('reason','unknown'),
+                      output_validation_reason=validation_reason,
                       child_exit=result.get('exit'),
                       child_stderr_sha256=digest(child_stderr.encode()),
                       child_stderr_bytes=result.get('stderr_bytes',len(child_stderr.encode())),

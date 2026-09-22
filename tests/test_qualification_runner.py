@@ -305,6 +305,32 @@ def test_vendor_grok_catalog_display_name_is_accepted_only_for_exact_route():
     assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.6 Extra High')},'cursor-grok-4.6-high')
 
 
+@pytest.mark.parametrize(('stdout','model','expected'), [
+    ('not-json', 'cursor-grok-4.6-high', 'malformed_stream_json'),
+    ('', 'cursor-grok-4.6-high', 'missing_events'),
+    ('null', 'cursor-grok-4.6-high', 'malformed_event'),
+    ('[]', 'cursor-grok-4.6-high', 'malformed_event'),
+    ('1', 'cursor-grok-4.6-high', 'malformed_event'),
+    (json.dumps({'type':'system','subtype':'init','model':'Grok 4.7'}), 'cursor-grok-4.6-high', 'identity_mismatch'),
+])
+def test_output_validation_reason_is_bounded_and_fail_closed(stdout, model, expected):
+    result={'exit':0,'stdout':stdout,'stderr':'','reason':'process_exit'}
+    assert gate.output_validation_reason(result, model)==expected
+    assert gate.validate_output(result, model) is False
+
+
+def test_output_validation_reason_rejects_non_string_stdout_without_leaking_content():
+    assert gate.output_validation_reason({'exit':0,'stdout':None}, 'cursor-grok-4.6-high') == 'malformed_stream_json'
+
+
+def test_output_identity_mismatch_reason_is_durable_class():
+    stdout='\n'.join([
+        json.dumps({'type':'system','subtype':'init','model':'Grok 4.7'}),
+        json.dumps({'type':'result','subtype':'success','is_error':False}),
+    ])
+    assert gate.output_validation_reason({'exit':0,'stdout':stdout}, 'cursor-grok-4.6-high') == 'identity_mismatch'
+
+
 def test_pivot_root_rejects_unknown_architecture_before_syscall(monkeypatch, tmp_path):
     monkeypatch.setattr(jail.platform, 'machine', lambda: 'unsupported-test-arch')
     with pytest.raises(OSError, match='unsupported architecture'):
