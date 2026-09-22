@@ -924,11 +924,22 @@ class TaskWorker:
             immutable["executor_extracted_json"] = extracted
         if not acceptance:
             acceptance = [{"disposition": "COMPLETE", "verdict": "PASS"}]
+        evidence_contract = ""
+        if context.get("delivery_profile"):
+            evidence_contract = (
+                "\n\nBOUNDED DELIVERY EVIDENCE CONTRACT\n"
+                "For every criterion, evidence_refs MUST contain exactly one object: "
+                "{\"name\":\"deliverable\",\"sha256\":\""
+                + str(trusted["sha256"]) + "\"}. Use the canonical name deliverable, "
+                "not the filename, specification, stdout, stderr, or any other name. "
+                "The SHA-256 must match the trusted deliverable bytes exactly."
+            )
         prompt = (
             "AUDIT OBJECTIVE\n" + task.objective + "\n\nACCEPTANCE CRITERIA\n" +
             json.dumps(acceptance, sort_keys=True) + "\n\nEXECUTOR EVIDENCE\n" +
             json.dumps(immutable, sort_keys=True) +
             "\n\nTRUSTED EVIDENCE\n" + json.dumps(trusted, sort_keys=True) +
+            evidence_contract +
             "\n\nRead-only review: do not create/edit files or invoke controllers. "
             "Return exactly one JSON object, no Markdown fences, matching this verdict schema:\n"
             + json.dumps(AUDITOR_SCHEMA, sort_keys=True)

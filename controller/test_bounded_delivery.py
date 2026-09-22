@@ -37,9 +37,11 @@ class SimulatedCursor:
         self.adapter_id, self.model, self.spec = adapter_id, model, spec
         self.review, self.reject, self.fault = review, reject, fault
         self.calls = 0
+        self.prompts = []
     def cancel(self): pass
     def execute(self, request):
         self.calls += 1
+        self.prompts.append(request.prompt)
         root, role = Path(request.cwd), Path(request.artifact_dir)
         role.mkdir(parents=True, exist_ok=True)
         if self.review:
@@ -104,6 +106,9 @@ def test_disposable_delivery_and_bound_history(scenario, artifact_root):
     assert loop.run() and loop.last_status == "handoff_completed"
     assert parent.task(handoff["provider_task_id"]).state == "verified"
     assert author.calls == reviewer.calls == 1
+    assert 'BOUNDED DELIVERY EVIDENCE CONTRACT' in reviewer.prompts[0]
+    assert '"name":"deliverable"' in reviewer.prompts[0]
+    assert spec['filename'] in reviewer.prompts[0]
     product = next(artifact_root.rglob("handoff-product.json"))
     request = json.loads((artifact_root / handoff["request_path"]).read_text())
     assert validate_product(product, request, artifact_root)["disposition"] == request["required_disposition"]
