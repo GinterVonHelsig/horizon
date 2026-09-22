@@ -483,3 +483,5 @@ def test_production_canary_policy_is_cursor_only_and_explicit() -> None:
     assert {item["provider"] for item in config["adapters"]} == {"cursor"}
     assert config["routes"]["default_auditor"] == "cursor-independent-review"
     assert all(item.get("credential_env") == [] for item in config["adapters"])
+    expected_env = ["PATH", "HOME", "LANG", "CURSOR_HOME", "CURSOR_CONFIG_DIR"]
+    assert all(item.get("allowlisted_env") == expected_env for item in config["adapters"])

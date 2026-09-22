@@ -12,6 +12,7 @@
       "executable": "/APPROVED/CURSOR_AGENT",
       "approval_mode": "never",
       "credential_env": [],
+      "allowlisted_env": ["PATH", "HOME", "LANG", "CURSOR_HOME", "CURSOR_CONFIG_DIR"],
       "timeout_seconds": 300,
       "allowed_cwd_roots": ["/var/lib/top-delivery/canary"],
       "subscription_only": true,
@@ -32,6 +33,7 @@
       "approval_mode": "never",
       "cursor_mode": "ask",
       "credential_env": [],
+      "allowlisted_env": ["PATH", "HOME", "LANG", "CURSOR_HOME", "CURSOR_CONFIG_DIR"],
       "timeout_seconds": 900,
       "allowed_cwd_roots": ["/var/lib/top-delivery/canary"]
     }
