@@ -299,7 +299,10 @@ def test_vendor_grok_catalog_display_name_is_accepted_only_for_exact_route():
         json.dumps({'type':'result','subtype':'success','is_error':False}),
     ]),'stderr':'','reason':'process_exit'}
     assert gate.validate_output(result,'cursor-grok-4.6-high')
+    assert not gate.validate_output(result,'composer-2.5')
     assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.7')},'cursor-grok-4.6-high')
+    assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.6 Fast')},'cursor-grok-4.6-high')
+    assert not gate.validate_output({**result,'stdout':result['stdout'].replace('Grok 4.6','Grok 4.6 Extra High')},'cursor-grok-4.6-high')
 
 
 def test_pivot_root_rejects_unknown_architecture_before_syscall(monkeypatch, tmp_path):

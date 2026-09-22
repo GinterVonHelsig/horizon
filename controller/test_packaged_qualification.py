@@ -212,8 +212,13 @@ def test_packaged_submission_to_durable_whole_goal(consumer, server, db_url, fir
         assert len(sessions)==4 and all(s['state']=='complete' for s in sessions)
         assert [s['model'] for s in sessions]==['composer-2.5','cursor-grok-4.6-high']*2
         if qualification_inputs:
-            assert all(s['execution']=='cursor-subscription' and s['observed_model'] in {'Composer 2.5','Cursor Grok 4.6 High','Grok 4.6'}
-                       and s['runtime_inventory_sha256']==qualification_inputs['runtime_inventory_sha256'] for s in sessions)
+            composer_labels={'composer-2.5','Composer 2.5'}
+            grok_labels={'cursor-grok-4.6-high','Cursor Grok 4.6 High','Grok 4.6'}
+            for index, session in enumerate(sessions):
+                allowed=composer_labels if index % 2 == 0 else grok_labels
+                assert (session['execution']=='cursor-subscription'
+                        and session['observed_model'] in allowed
+                        and session['runtime_inventory_sha256']==qualification_inputs['runtime_inventory_sha256'])
         with parent._repo.transaction() as cur:
             cur.execute('SELECT product_digest FROM horizon_prerequisite_adoptions WHERE run_id=%s', (parsed.run_id,))
             adoptions=list(cur.fetchall())
