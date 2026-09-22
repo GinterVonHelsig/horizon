@@ -99,11 +99,14 @@ def load_config(path):
     pinned(config['adapter_config'], config['adapter_sha256'])
     binding = config.get('canary_binding')
     if binding is not None:
-        if not isinstance(binding, dict) or set(binding) != {'run_id','workspace_root','workspace_dev','workspace_ino','executor_route','reviewer_route','max_sessions'}:
+        if not isinstance(binding, dict) or set(binding) != {'run_id','artifact_root','workspace_root','workspace_dev','workspace_ino','workspace_uid','executor_route','reviewer_route','max_sessions'}:
             raise ValueError('invalid canary binding')
-        if not RUN.fullmatch(binding['run_id']) or not isinstance(binding['workspace_root'], str) or not Path(binding['workspace_root']).is_absolute():
+        if (not RUN.fullmatch(binding['run_id'])
+                or not isinstance(binding['workspace_root'], str) or not Path(binding['workspace_root']).is_absolute()
+                or not isinstance(binding['artifact_root'], str) or not Path(binding['artifact_root']).is_absolute()):
             raise ValueError('invalid canary identity')
-        if any(type(binding[k]) is not int or binding[k] < 0 for k in ('workspace_dev','workspace_ino')) or type(binding['max_sessions']) is not int or not 1 <= binding['max_sessions'] <= 5:
+        if (any(type(binding[k]) is not int or binding[k] < 0 for k in ('workspace_dev','workspace_ino','workspace_uid'))
+                or type(binding['max_sessions']) is not int or not 1 <= binding['max_sessions'] <= 5):
             raise ValueError('invalid canary limits')
         if not all(isinstance(binding[k], str) and binding[k] for k in ('executor_route','reviewer_route')):
             raise ValueError('invalid canary routes')
@@ -120,13 +123,51 @@ def enforce_canary_binding(config, parsed, artifact_root):
     from harness_adapters.registry import load_registry_config, validate_task_routes
     registry = load_registry_config(Path(config['adapter_config']), validate_executables=False)
     validate_task_routes(registry, binding['executor_route'], binding['reviewer_route'])
-    workspace = trusted(binding['workspace_root'], directory=True, private=True)
-    info = workspace.stat()
-    if (info.st_dev, info.st_ino) != (binding['workspace_dev'], binding['workspace_ino']):
-        raise ValueError('canary workspace identity changed')
     artifact = Path(artifact_root).absolute()
-    if not artifact.is_relative_to(workspace) or any(p.is_symlink() for p in (artifact, *artifact.parents)):
-        raise ValueError('canary artifact outside bound workspace')
+    expected_artifact = Path(binding['artifact_root']).absolute()
+    if artifact != expected_artifact or not artifact.is_relative_to(Path(config['runs_root']).absolute()):
+        raise ValueError('canary artifact identity mismatch')
+    verify_canary_workspace(binding)
+
+
+def verify_canary_workspace(binding):
+    """Verify a worker-owned leaf beneath a root-owned, non-writable path.
+
+    The root-owned parent prevents UID 999 from replacing the pinned leaf after
+    validation. Open each component with O_NOFOLLOW so intermediate symlinks
+    cannot redirect the check. The worker may write inside the leaf only.
+    """
+    path = Path(binding['workspace_root'])
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('unsafe canary workspace path')
+    parts = path.parts
+    if len(parts) < 2 or not parts[-1]:
+        raise ValueError('canary workspace must be a leaf directory')
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for index, part in enumerate(parts[1:]):
+            final = index == len(parts[1:]) - 1
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            child = os.open(part, flags, dir_fd=fd)
+            info = os.fstat(child)
+            if final:
+                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != binding['workspace_uid']
+                        or info.st_mode & 0o077
+                        or (info.st_dev, info.st_ino) != (binding['workspace_dev'], binding['workspace_ino'])):
+                    os.close(child)
+                    raise ValueError('canary workspace identity changed')
+            else:
+                sticky_tmp = part == 'tmp' and info.st_uid == 0 and info.st_mode & stat.S_ISVTX
+                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
+                        or (info.st_mode & 0o022 and not sticky_tmp)):
+                    os.close(child)
+                    raise ValueError('canary workspace parent is not root controlled')
+            os.close(fd)
+            fd = child
+    except FileNotFoundError as exc:
+        raise ValueError('canary workspace is not provisioned') from exc
+    finally:
+        os.close(fd)
 
 
 def atomic(path, value):

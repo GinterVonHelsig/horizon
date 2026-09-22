@@ -453,25 +453,48 @@ def test_canary_binding_fences_uid_run_and_workspace_inode(tmp_path, monkeypatch
     workspace = tmp_path / "canary"
     workspace.mkdir(mode=0o700)
     info = workspace.stat()
+    artifact_root = tmp_path / "runs" / "goal-0123456789abcdef" / "artifacts"
     config = {"canary_binding": {
-        "run_id": "goal-0123456789abcdef", "workspace_root": str(workspace),
+        "run_id": "goal-0123456789abcdef", "artifact_root": str(artifact_root),
+        "workspace_root": str(workspace), "workspace_uid": info.st_uid,
         "workspace_dev": info.st_dev, "workspace_ino": info.st_ino,
         "executor_route": "cursor-composer-canary", "reviewer_route": "cursor-grok-canary",
         "max_sessions": 5}}
     config["adapter_config"] = str(tmp_path / "adapters.json")
+    config["runs_root"] = str(tmp_path / "runs")
     import harness_adapters.registry as registry
     monkeypatch.setattr(registry, "load_registry_config", lambda *a, **k: {})
     monkeypatch.setattr(registry, "validate_task_routes", lambda *a, **k: None)
     parsed = SimpleNamespace(run_id="goal-0123456789abcdef")
-    runtime.enforce_canary_binding(config, parsed, workspace / "artifacts")
-    (workspace / "artifacts").mkdir()
+    runtime.enforce_canary_binding(config, parsed, artifact_root)
     moved = tmp_path / "moved"
     workspace.rename(moved)
     workspace.mkdir(mode=0o700)
     with pytest.raises(ValueError, match="workspace identity changed"):
-        runtime.enforce_canary_binding(config, parsed, workspace / "artifacts")
+        runtime.enforce_canary_binding(config, parsed, artifact_root)
     with pytest.raises(ValueError, match="run identity mismatch"):
-        runtime.enforce_canary_binding(config, SimpleNamespace(run_id="goal-fedcba9876543210"), moved)
+        runtime.enforce_canary_binding(config, SimpleNamespace(run_id="goal-fedcba9876543210"), artifact_root)
+    with pytest.raises(ValueError, match="artifact identity mismatch"):
+        runtime.enforce_canary_binding(config, parsed, tmp_path / "runs" / "other")
+
+
+def test_canary_workspace_rejects_uid_mutable_parent(tmp_path):
+    parent = tmp_path / "mutable-parent"
+    parent.mkdir(mode=0o770)
+    parent.chmod(0o770)
+    workspace = parent / "workspace"
+    workspace.mkdir(mode=0o700)
+    info = workspace.stat()
+    binding = {"workspace_root": str(workspace), "workspace_uid": info.st_uid,
+               "workspace_dev": info.st_dev, "workspace_ino": info.st_ino}
+    with pytest.raises(ValueError, match="parent is not root controlled"):
+        runtime.verify_canary_workspace(binding)
+
+
+def test_canary_workspace_rejects_filesystem_root():
+    with pytest.raises(ValueError, match="leaf directory"):
+        runtime.verify_canary_workspace({"workspace_root": "/", "workspace_uid": 0,
+            "workspace_dev": 0, "workspace_ino": 0})
 
 
 def test_production_canary_policy_is_cursor_only_and_explicit() -> None:
