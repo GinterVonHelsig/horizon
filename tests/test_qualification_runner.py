@@ -72,7 +72,11 @@ if prompt=='probe':
                 connection.connect(('127.0.0.1',port))
                 raise AssertionError('network boundary bypassed')
             except PermissionError: pass
-    assert not pathlib.Path('/opt/operator-harness').exists()
+    # The durable bind may create empty synthetic ancestors under the jail
+    # tmpfs. Assert forbidden host contents are absent rather than rejecting
+    # the authorized path's ancestor names.
+    assert not pathlib.Path('/opt/operator-harness/controller').exists()
+    assert not pathlib.Path('/opt/operator-harness/.git').exists()
     assert not pathlib.Path('/etc/ssl/private').exists()
     assert not pathlib.Path('/usr/local').exists()
     assert not pathlib.Path('/var/lib/top-delivery-submission-bundles').exists()

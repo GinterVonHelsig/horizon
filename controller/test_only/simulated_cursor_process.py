@@ -18,6 +18,7 @@ if model == 'composer-2.5':
         assignment = json.JSONDecoder().raw_decode(prompt.split('\n', 1)[1])[0]
         result = {k: assignment[k] for k in ('run_id', 'task_id', 'attempt_id')}
         result.update(disposition='PASS/PARENT', evidence_summary='SIMULATED parent continuation completed')
+        Path('/workspace/received-result-file.txt').write_text(assignment['result_file'])
         adopted=json.loads(prompt.rsplit('\nVALIDATED PREREQUISITE PRODUCTS\n',1)[1])
         assert len(adopted)==1
         result['adopted_product_sha256']=adopted[0]['product_sha256']

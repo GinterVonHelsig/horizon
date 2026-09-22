@@ -220,6 +220,9 @@ def test_packaged_submission_to_durable_whole_goal(consumer, server, db_url, fir
             assert len(adoptions)==1
         parent_result=next(json.loads(p.read_text()) for p in artifacts.rglob('harness-result.json')
                            if json.loads(p.read_text()).get('adapter_id')=='cursor-parent-composer')
+        received_path=parent_result and next((p for p in artifacts.rglob('received-result-file.txt')), None)
+        assert received_path is not None
+        assert received_path.read_text() == '/workspace/executor-result.json'
         assert parent_result['structured_payload']['extracted_json']['adopted_product_sha256']==adoptions[0]['product_digest']
         (root/'packaged-chain-evidence.json').write_text(json.dumps({'execution':'CURSOR SUBSCRIPTION' if qualification_inputs else 'SIMULATED MODEL SUBPROCESSES',
             'service_identity':'pytest private seam, not live systemd', 'steps':steps,
