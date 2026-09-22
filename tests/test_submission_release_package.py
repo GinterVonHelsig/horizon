@@ -436,3 +436,14 @@ def test_stale_or_untrusted_submission_socket_is_preserved_and_rejected(consumer
         assert result.returncode==78 and not path.exists()
     finally:
         path.parent.chmod(0o700)
+
+
+def test_production_submission_template_is_uid_bound_to_topdelivery() -> None:
+    """The host transport must never require root or admit root peers."""
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "tools/submission_transport/host-gateway.service.in").read_text()
+    config = json.loads((root / "tools/submission_transport/consumer.example.json").read_text())
+    assert "User=topdelivery" in service
+    assert "User=root" not in service
+    assert config["service_uid"] == 999
+    assert config["allowed_uids"] == [999]

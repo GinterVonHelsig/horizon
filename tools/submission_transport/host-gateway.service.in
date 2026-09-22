@@ -6,7 +6,7 @@ StartLimitBurst=3
 
 [Service]
 Type=simple
-User=root
+User=topdelivery
 Group=topdelivery
 ExecStart=/APPROVED/PYTHON -I /APPROVED/RELEASE/bin/top-delivery-host-gateway-server --config /APPROVED/CONSUMER.json
 Restart=on-failure
