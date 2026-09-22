@@ -446,3 +446,25 @@ def test_submission_template_preserves_privileged_host_gateway_compatibility() -
     assert "User=root" in service
     assert config["service_uid"] == 0
     assert config["allowed_uids"] == [0, 999]
+
+
+def test_canary_binding_fences_uid_run_and_workspace_inode(tmp_path):
+    from types import SimpleNamespace
+    workspace = tmp_path / "canary"
+    workspace.mkdir(mode=0o700)
+    info = workspace.stat()
+    config = {"canary_binding": {
+        "run_id": "goal-0123456789abcdef", "workspace_root": str(workspace),
+        "workspace_dev": info.st_dev, "workspace_ino": info.st_ino,
+        "executor_route": "cursor-composer-canary", "reviewer_route": "cursor-grok-canary",
+        "max_sessions": 5}}
+    parsed = SimpleNamespace(run_id="goal-0123456789abcdef")
+    runtime.enforce_canary_binding(config, parsed, workspace / "artifacts")
+    (workspace / "artifacts").mkdir()
+    moved = tmp_path / "moved"
+    workspace.rename(moved)
+    workspace.mkdir(mode=0o700)
+    with pytest.raises(ValueError, match="workspace identity changed"):
+        runtime.enforce_canary_binding(config, parsed, workspace / "artifacts")
+    with pytest.raises(ValueError, match="run identity mismatch"):
+        runtime.enforce_canary_binding(config, SimpleNamespace(run_id="goal-fedcba9876543210"), moved)

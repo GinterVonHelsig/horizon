@@ -67,8 +67,9 @@ def load_config(path):
     keys = {'schema', 'enabled', 'release_root', 'release_commit', 'release_manifest_sha256',
         'prompt_root', 'runs_root', 'journal_root', 'socket_path', 'service_uid', 'socket_gid',
         'allowed_uids', 'systemd_run', 'systemd_run_sha256', 'python', 'python_sha256',
-        'environment_file', 'adapter_config', 'adapter_sha256'}
-    if set(config) != keys or config['schema'] != 'horizon-submission-consumer.v1' or type(config['enabled']) is not bool:
+        'environment_file', 'adapter_config', 'adapter_sha256', 'canary_binding'}
+    required_keys = keys - {'canary_binding'}
+    if not required_keys <= set(config) or set(config) - keys or config['schema'] != 'horizon-submission-consumer.v1' or type(config['enabled']) is not bool:
         raise ValueError('invalid consumer configuration')
     release = trusted(config['release_root'], directory=True)
     if release != ROOT or not re.fullmatch(r'[0-9a-f]{40}', config['release_commit']):
@@ -96,7 +97,33 @@ def load_config(path):
         pinned(config[name], config[name + '_sha256'])
     trusted(config['environment_file'])  # Do not read/export credentials.
     pinned(config['adapter_config'], config['adapter_sha256'])
+    binding = config.get('canary_binding')
+    if binding is not None:
+        if not isinstance(binding, dict) or set(binding) != {'run_id','workspace_root','workspace_dev','workspace_ino','executor_route','reviewer_route','max_sessions'}:
+            raise ValueError('invalid canary binding')
+        if not RUN.fullmatch(binding['run_id']) or not isinstance(binding['workspace_root'], str) or not Path(binding['workspace_root']).is_absolute():
+            raise ValueError('invalid canary identity')
+        if any(type(binding[k]) is not int or binding[k] < 0 for k in ('workspace_dev','workspace_ino')) or type(binding['max_sessions']) is not int or not 1 <= binding['max_sessions'] <= 5:
+            raise ValueError('invalid canary limits')
+        if not all(isinstance(binding[k], str) and binding[k] for k in ('executor_route','reviewer_route')):
+            raise ValueError('invalid canary routes')
     return config
+
+
+def enforce_canary_binding(config, parsed, artifact_root):
+    """Bind a staged canary to one run and one inode; do not relax path trust."""
+    binding = config.get('canary_binding')
+    if binding is None:
+        return
+    if parsed.run_id != binding['run_id']:
+        raise ValueError('canary run identity mismatch')
+    workspace = trusted(binding['workspace_root'], directory=True, private=True)
+    info = workspace.stat()
+    if (info.st_dev, info.st_ino) != (binding['workspace_dev'], binding['workspace_ino']):
+        raise ValueError('canary workspace identity changed')
+    artifact = Path(artifact_root).absolute()
+    if not artifact.is_relative_to(workspace) or any(p.is_symlink() for p in (artifact, *artifact.parents)):
+        raise ValueError('canary artifact outside bound workspace')
 
 
 def atomic(path, value):
@@ -215,6 +242,7 @@ def submit(config, request, data, parsed):
     artifact = Path(request.get('artifact_root') or root / parsed.run_id / 'artifacts').absolute()
     if '..' in artifact.parts or not artifact.is_relative_to(root) or any(p.is_symlink() for p in (artifact, *artifact.parents)):
         raise ValueError('artifact root outside configured runs root')
+    enforce_canary_binding(config, parsed, artifact)
     identity = {'prompt_sha256': digest(data), 'submission_run_id': parsed.run_id,
         'task_ids': [w.task_id for w in parsed.workstreams], 'existing_parent': parent,
         'artifact_root': str(artifact), 'release_commit': config['release_commit'],
