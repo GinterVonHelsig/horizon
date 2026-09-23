@@ -183,6 +183,8 @@ def _launch_failure_diagnostic(exc: BaseException) -> dict:
         return {"launch_failure_class": "permission_denied", "launch_errno": errno.EACCES}
     if isinstance(exc, FileNotFoundError):
         return {"launch_failure_class": "executable_or_path_missing", "launch_errno": errno.ENOENT}
+    if isinstance(exc, ChildSetupFailed):
+        return {"launch_failure_class": "child_setup_failed", "launch_failure_stage": exc.stage}
     if isinstance(exc, subprocess.SubprocessError):
         return {"launch_failure_class": "child_setup_failed"}
     if isinstance(exc, OSError):
@@ -194,27 +196,55 @@ def _launch_failure_diagnostic(exc: BaseException) -> dict:
     return {"launch_failure_class": "launch_outcome_unknown"}
 
 
-def _child_preexec(uid: int, gid: int, workspace_fd: int) -> None:
+class ChildSetupFailed(subprocess.SubprocessError):
+    def __init__(self, stage: str):
+        self.stage = stage
+        super().__init__("child_setup_failed")
+
+
+def _child_preexec(uid: int, gid: int, workspace_fd: int, diagnostic_fd: int) -> None:
     # Broker systemd unit grants only SETUID/SETGID/SETPCAP for this transition.
     # Clear ambient and bounding capabilities while SETPCAP is still available;
     # setgroups/setresgid/setresuid then consume the remaining setup authority.
     import ctypes
     libc = ctypes.CDLL(None, use_errno=True)
     PR_CAPBSET_DROP, PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, PR_SET_NO_NEW_PRIVS = 24, 47, 4, 38
+    def fail(stage: str, number: int = errno.EPERM) -> None:
+        try:
+            os.write(diagnostic_fd, stage.encode("ascii"))
+        finally:
+            raise OSError(number, "child_setup_failed")
+
     if libc.prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) != 0:
-        os._exit(126)
+        fail("ambient_clear")
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-        os._exit(126)
-    last_cap = int(Path("/proc/sys/kernel/cap_last_cap").read_text())
+        fail("no_new_privs")
+    try:
+        last_cap = int(Path("/proc/sys/kernel/cap_last_cap").read_text())
+    except OSError as exc:
+        fail("cap_limit_read", exc.errno or errno.EIO)
     for cap in [value for value in range(last_cap + 1) if value != 8] + [8]:
         if libc.prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) != 0:
-            os._exit(126)
-    os.setgroups([])
-    os.setresgid(gid, gid, gid)
-    os.setresuid(uid, uid, uid)
+            fail("capability_drop")
+    try:
+        os.setgroups([])
+    except OSError as exc:
+        fail("setgroups", exc.errno or errno.EPERM)
+    try:
+        os.setresgid(gid, gid, gid)
+    except OSError as exc:
+        fail("setresgid", exc.errno or errno.EPERM)
+    try:
+        os.setresuid(uid, uid, uid)
+    except OSError as exc:
+        fail("setresuid", exc.errno or errno.EPERM)
     # Enter the pinned inode only after the child owns its 0700 permissions.
-    os.fchdir(workspace_fd)
+    try:
+        os.fchdir(workspace_fd)
+    except OSError as exc:
+        fail("fchdir_workspace", exc.errno or errno.EPERM)
     os.close(workspace_fd)
+    os.close(diagnostic_fd)
 
 
 def _launch(config: dict, route: dict, prompt: str) -> dict:
@@ -233,10 +263,29 @@ def _launch(config: dict, route: dict, prompt: str) -> dict:
     env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": config["child_home"],
         "USER": "topdelivery", "LOGNAME": "topdelivery", "CURSOR_HOME": config["cursor_home"],
         "CURSOR_CONFIG_DIR": config["cursor_home"]}
-    proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, start_new_session=True,
-        pass_fds=(workspace_fd,),
-        preexec_fn=lambda: _child_preexec(config["child_uid"], config["child_gid"], workspace_fd))
+    diagnostic_read, diagnostic_write = os.pipe2(os.O_CLOEXEC)
+    try:
+        try:
+            proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, start_new_session=True,
+                pass_fds=(workspace_fd, diagnostic_write),
+                preexec_fn=lambda: _child_preexec(config["child_uid"], config["child_gid"], workspace_fd, diagnostic_write))
+        except subprocess.SubprocessError as exc:
+            os.close(diagnostic_write)
+            diagnostic_write = -1
+            stage = os.read(diagnostic_read, 64).decode("ascii", errors="ignore")
+            if stage in {"ambient_clear", "no_new_privs", "cap_limit_read", "capability_drop",
+                         "setgroups", "setresgid", "setresuid", "fchdir_workspace"}:
+                raise ChildSetupFailed(stage) from exc
+            raise
+        finally:
+            if diagnostic_write >= 0:
+                os.close(diagnostic_write)
+        setup_stage = os.read(diagnostic_read, 64).decode("ascii", errors="ignore")
+        if setup_stage:
+            raise ChildSetupFailed(setup_stage)
+    finally:
+        os.close(diagnostic_read)
     started = time.monotonic()
     selector = selectors.DefaultSelector()
     assert proc.stdout is not None and proc.stderr is not None
