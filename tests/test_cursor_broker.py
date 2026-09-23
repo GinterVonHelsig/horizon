@@ -8,12 +8,15 @@ import sys
 import tempfile
 import threading
 import shutil
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.cursor_broker import client, server
+from harness_adapters.cli_adapters import CliHarnessAdapter
+from harness_adapters.contract import HarnessRequest
 
 
 def config(tmp_path: Path) -> dict:
@@ -142,6 +145,47 @@ def test_client_rejects_model_or_flag_substitution(monkeypatch):
     monkeypatch.setenv("HORIZON_CURSOR_BROKER_ROUTE", "cursor-independent-review")
     assert client.main(["-p", "review", "--output-format", "stream-json", "--model",
         "cursor-grok-4.6", "--mode", "ask", "--sandbox", "enabled", "--trust"]) == 78
+
+
+def test_horizon_adapter_forwards_only_bound_broker_identity(tmp_path):
+    class CaptureRunner:
+        artifact_dir = None
+
+        def run(self, **kwargs):
+            self.call = kwargs
+            return SimpleNamespace(exit_code=None, duration_seconds=0.0, inline_stdout=None,
+                stdout_artifact_path=None, stdout_sha256=None, stderr_artifact_path=None,
+                stderr_sha256=None, structured_payload=None,
+                error_classification="transport_failure", retryable=False,
+                stdout_truncated=False, stderr_truncated=False)
+
+        def cancel(self):
+            pass
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    runner = CaptureRunner()
+    adapter = CliHarnessAdapter(adapter_id="cursor-independent-review", kind="cursor_cli",
+        executable="/release/bin/top-delivery-cursor-broker-client", model="cursor-grok-4.6-high",
+        provider="cursor", credential_env=(), timeout_seconds=900,
+        allowed_cwd_roots=(str(workspace),), runner=runner, approval_mode="never", cursor_mode="ask",
+        broker_socket="/run/top-delivery-cursor-broker/cursor.sock",
+        broker_route_id="cursor-independent-review")
+    request_value = HarnessRequest("goal-5b434f0a3d720c89", "task-1", "attempt-1", "review",
+        "prompt", str(workspace), 900, None, (), str(tmp_path / "artifacts"), {"role": "auditor"})
+    assert adapter.execute(request_value).status == "failure"
+    call = runner.call
+    assert call["executable"] == adapter.executable
+    assert call["argv"] == [adapter.executable, "-p", "prompt", "--output-format", "stream-json",
+        "--model", "cursor-grok-4.6-high", "--mode", "ask", "--sandbox", "enabled", "--trust"]
+    assert call["extra_env"] == {
+        "HORIZON_CURSOR_BROKER_SOCKET": "/run/top-delivery-cursor-broker/cursor.sock",
+        "HORIZON_CURSOR_BROKER_ROUTE": "cursor-independent-review",
+        "HORIZON_CURSOR_BROKER_RUN_ID": request_value.run_id,
+        "HORIZON_CURSOR_BROKER_TASK_ID": request_value.task_id,
+        "HORIZON_CURSOR_BROKER_ATTEMPT_ID": request_value.attempt_id,
+        "HORIZON_CURSOR_BROKER_ROLE": "auditor",
+    }
 
 
 def test_real_child_boundary_drops_to_uid999_with_zero_caps_and_nnp(tmp_path):
