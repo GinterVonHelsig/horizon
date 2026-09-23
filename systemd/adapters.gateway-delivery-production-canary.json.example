@@ -9,12 +9,14 @@
       "kind": "gateway_delivery",
       "provider": "cursor",
       "model": "composer-2.5",
-      "executable": "/APPROVED/CURSOR_AGENT",
+      "executable": "/APPROVED/RELEASE/bin/top-delivery-cursor-broker-client",
+      "broker_socket": "/run/top-delivery-cursor-broker/cursor.sock",
+      "broker_route_id": "gateway-delivery-disposable-file",
       "approval_mode": "never",
       "credential_env": [],
       "allowlisted_env": ["PATH", "HOME", "LANG", "CURSOR_HOME", "CURSOR_CONFIG_DIR"],
       "timeout_seconds": 300,
-      "allowed_cwd_roots": ["/var/lib/top-delivery/canary"],
+      "allowed_cwd_roots": ["/var/lib/top-delivery-canary/goal-5b434f0a3d720c89/workspace"],
       "subscription_only": true,
       "on_demand_disabled": true,
       "delivery_spec": {
@@ -29,13 +31,15 @@
       "kind": "cursor_cli",
       "provider": "cursor",
       "model": "cursor-grok-4.6-high",
-      "executable": "/APPROVED/CURSOR_AGENT",
+      "executable": "/APPROVED/RELEASE/bin/top-delivery-cursor-broker-client",
+      "broker_socket": "/run/top-delivery-cursor-broker/cursor.sock",
+      "broker_route_id": "cursor-independent-review",
       "approval_mode": "never",
       "cursor_mode": "ask",
       "credential_env": [],
       "allowlisted_env": ["PATH", "HOME", "LANG", "CURSOR_HOME", "CURSOR_CONFIG_DIR"],
       "timeout_seconds": 900,
-      "allowed_cwd_roots": ["/var/lib/top-delivery/canary"]
+      "allowed_cwd_roots": ["/var/lib/top-delivery-canary/goal-5b434f0a3d720c89/workspace"]
     }
   ]
 }

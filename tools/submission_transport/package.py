@@ -6,7 +6,8 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
-ENTRIES = ('top-delivery-submit', 'top-delivery-host-gateway', 'top-delivery-host-gateway-server')
+ENTRIES = ('top-delivery-submit', 'top-delivery-host-gateway', 'top-delivery-host-gateway-server',
+           'top-delivery-cursor-broker-client', 'top-delivery-cursor-broker-server')
 
 
 def stage(output, allow_uncommitted=False):
@@ -17,6 +18,8 @@ def stage(output, allow_uncommitted=False):
     sources += ['architecture/model-routing.yaml', *(f'tools/submission_transport/{name}' for name in
         ('transport.py','package.py','consumer.example.json','host-gateway.service.in','PROVENANCE.md'))]
     sources += [f'tools/qualification/{name}' for name in ('client.py','session_gate.py','jail.py')]
+    sources += [f'tools/cursor_broker/{name}' for name in
+        ('__init__.py','client.py','server.py','cursor-broker.service.in','cursor-broker.tmpfiles.in')]
     files, dirty = {}, []
     for name in sources:
         path = ROOT / name
@@ -30,14 +33,20 @@ def stage(output, allow_uncommitted=False):
     if dirty and not allow_uncommitted:
         raise ValueError('uncommitted package inputs')
     for entry in ENTRIES:
+        if entry == 'top-delivery-cursor-broker-client':
+            import_path, function = 'cursor_broker.client', 'main'
+        elif entry == 'top-delivery-cursor-broker-server':
+            import_path, function = 'cursor_broker.server', 'main'
+        else:
+            import_path, function = 'transport', 'main'
+        call = f"{function}({entry!r})" if import_path == 'transport' else f"{function}()"
         files['bin/' + entry] = ('''#!/usr/bin/env -S python3 -I
 import sys
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
-sys.path[:0] = [str(root / 'tools/submission_transport'), str(root / 'controller')]
-from transport import main
-raise SystemExit(main(''' + repr(entry) + '))\n').encode()
+sys.path[:0] = [str(root / 'tools'), str(root / 'tools/submission_transport'), str(root / 'controller')]
+from ''' + import_path + ' import ' + function + '\nraise SystemExit(' + call + ')\n').encode()
     manifest = {'schema':'horizon-submission-release.v1', 'source_commit':sha,
         'source_state':'TEST_ONLY_UNCOMMITTED' if dirty else 'committed', 'uncommitted_inputs':dirty,
         'files':{name:hashlib.sha256(data).hexdigest() for name,data in sorted(files.items())}}

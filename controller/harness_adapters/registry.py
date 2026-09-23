@@ -27,8 +27,8 @@ _COMMON = frozenset({
 })
 _KIND_KEYS = {
     "codex_cli": frozenset({"executable", "codex_home", "allowlisted_env"}),
-    "cursor_cli": frozenset({"executable", "approval_mode", "worktree", "allowlisted_env", "cursor_mode"}),
-    "gateway_delivery": frozenset({"executable", "approval_mode", "allowlisted_env", "delivery_spec", "subscription_only", "on_demand_disabled"}),
+    "cursor_cli": frozenset({"executable", "approval_mode", "worktree", "allowlisted_env", "cursor_mode", "broker_socket", "broker_route_id"}),
+    "gateway_delivery": frozenset({"executable", "approval_mode", "allowlisted_env", "delivery_spec", "subscription_only", "on_demand_disabled", "broker_socket", "broker_route_id"}),
     "claude_cli": frozenset({"executable", "permission_mode", "allowlisted_env"}),
     "pi_cli": frozenset({"executable", "endpoint", "allowlisted_env"}),
     "http_openai": frozenset({
@@ -163,16 +163,23 @@ def validate_registry_config(config: dict[str, Any], *, validate_executables: bo
                 raise ValueError("codex_home must be absolute")
             if kind in {"cursor_cli", "gateway_delivery"} and raw.get("approval_mode") not in {"never", "approve_mcps"}:
                 raise ValueError("invalid cursor approval_mode")
-            if kind == "cursor_cli" and raw.get("cursor_mode") not in {None, "agent", "ask"}:
-                raise ValueError("invalid cursor_mode")
-            if kind == "gateway_delivery":
-                from bounded_delivery import validate_spec
-                validate_spec(raw.get("delivery_spec"))
-                from subworkflow_handoff import DELIVERY_CONTRACTS
-                if raw["id"] != DELIVERY_CONTRACTS[raw["delivery_spec"]["profile"]].executor_adapter or raw["provider"] != "cursor" or raw.get("subscription_only") is not True or raw.get("on_demand_disabled") is not True:
-                    raise ValueError("bounded delivery requires explicit Cursor included-subscription authorization")
-            if kind == "claude_cli" and not isinstance(raw.get("permission_mode"), str):
-                raise ValueError("claude permission_mode is required")
+        if kind == "cursor_cli" and raw.get("cursor_mode") not in {None, "agent", "ask"}:
+            raise ValueError("invalid cursor_mode")
+        if "broker_socket" in raw or "broker_route_id" in raw:
+            if (kind not in {"cursor_cli", "gateway_delivery"} or raw.get("provider") != "cursor"
+                    or not isinstance(raw.get("broker_socket"), str) or not Path(raw["broker_socket"]).is_absolute()
+                    or raw.get("broker_route_id") != adapter_id):
+                raise ValueError("invalid Cursor broker route binding")
+        if kind == "gateway_delivery":
+            from bounded_delivery import validate_spec
+            spec = validate_spec(raw.get("delivery_spec"))
+            from subworkflow_handoff import DELIVERY_CONTRACTS
+            if (raw["id"] != DELIVERY_CONTRACTS[spec["profile"]].executor_adapter
+                    or raw["provider"] != "cursor" or raw.get("subscription_only") is not True
+                    or raw.get("on_demand_disabled") is not True):
+                raise ValueError("bounded delivery requires explicit Cursor included-subscription authorization")
+        if kind == "claude_cli" and not isinstance(raw.get("permission_mode"), str):
+            raise ValueError("claude permission_mode is required")
     if routes["default_executor"] not in ids or routes["default_auditor"] not in ids:
         raise ValueError("route adapter ids must exist in adapters")
     by_id = {raw["id"]: raw for raw in adapters}

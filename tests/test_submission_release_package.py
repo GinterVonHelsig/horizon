@@ -498,7 +498,7 @@ def test_canary_workspace_rejects_filesystem_root():
 
 
 def test_production_canary_policy_is_cursor_only_and_explicit() -> None:
-    from harness_adapters.registry import load_registry_config, validate_task_routes
+    from harness_adapters.registry import AdapterRegistry, load_registry_config, validate_task_routes
     path = Path(__file__).resolve().parents[1] / "systemd/adapters.gateway-delivery-production-canary.json.example"
     config = load_registry_config(path, validate_executables=False)
     validate_task_routes(config, config["routes"]["default_executor"], config["routes"]["default_auditor"])
@@ -508,3 +508,30 @@ def test_production_canary_policy_is_cursor_only_and_explicit() -> None:
     assert all(item.get("credential_env") == [] for item in config["adapters"])
     expected_env = ["PATH", "HOME", "LANG", "CURSOR_HOME", "CURSOR_CONFIG_DIR"]
     assert all(item.get("allowlisted_env") == expected_env for item in config["adapters"])
+    assert all(item["broker_route_id"] == item["id"] for item in config["adapters"])
+    assert all(item["broker_socket"] == "/run/top-delivery-cursor-broker/cursor.sock" for item in config["adapters"])
+    registry = AdapterRegistry.from_config(config, artifact_dir=Path("/tmp/horizon-broker-config-test"),
+                                           validate_executables=False)
+    executor = registry.get("gateway-delivery-disposable-file").executor
+    reviewer = registry.get("cursor-independent-review")
+    assert executor.executable.endswith("/bin/top-delivery-cursor-broker-client")
+    assert executor._build_argv("prompt") == [executor.executable, "-p", "prompt", "--output-format",
+        "stream-json", "--model", "composer-2.5", "--force", "--sandbox", "enabled", "--trust"]
+    assert reviewer.executable.endswith("/bin/top-delivery-cursor-broker-client")
+    assert reviewer._build_argv("review") == [reviewer.executable, "-p", "review", "--output-format",
+        "stream-json", "--model", "cursor-grok-4.6-high", "--mode", "ask", "--sandbox", "enabled", "--trust"]
+
+
+def test_packaged_cursor_broker_entrypoints_start_without_dispatch(built):
+    client = built / "bin/top-delivery-cursor-broker-client"
+    server = built / "bin/top-delivery-cursor-broker-server"
+    assert client.is_file() and os.access(client, os.X_OK)
+    assert server.is_file() and os.access(server, os.X_OK)
+    env = {"PATH": "/usr/bin:/bin", "HORIZON_CURSOR_BROKER_ROUTE": "unconfigured"}
+    rejected = subprocess.run([str(client)], env=env, capture_output=True, text=True, timeout=5)
+    assert rejected.returncode == 78
+    assert "cursor_broker_transport_failure" not in rejected.stderr
+    help_result = subprocess.run([str(server), "--help"], env={"PATH": "/usr/bin:/bin"},
+                                 capture_output=True, text=True, timeout=5)
+    assert help_result.returncode == 0
+    assert "--config" in help_result.stdout
