@@ -245,6 +245,16 @@ def _child_preexec(uid: int, gid: int, workspace_fd: int, diagnostic_fd: int) ->
         os.fchdir(workspace_fd)
     except OSError as exc:
         fail("fchdir_workspace", exc.errno or errno.EPERM)
+    class CapHeader(ctypes.Structure):
+        _fields_ = [("version", ctypes.c_uint32), ("pid", ctypes.c_int)]
+    class CapData(ctypes.Structure):
+        _fields_ = [("effective", ctypes.c_uint32), ("permitted", ctypes.c_uint32),
+            ("inheritable", ctypes.c_uint32)]
+    header = CapHeader(0x20080522, 0)  # _LINUX_CAPABILITY_VERSION_3
+    empty = (CapData * 2)()
+    ctypes.set_errno(0)
+    if libc.capset(ctypes.byref(header), ctypes.byref(empty)) != 0:
+        fail("capability_sets_clear", ctypes.get_errno() or errno.EPERM)
     os.close(workspace_fd)
     os.close(diagnostic_fd)
 
@@ -279,7 +289,7 @@ def _launch(config: dict, route: dict, prompt: str) -> dict:
             parts = diagnostic.split(":", 1)
             stage = parts[0]
             if stage in {"ambient_clear", "no_new_privs", "cap_limit_read", "capability_drop",
-                         "setgroups", "setresgid", "setresuid", "fchdir_workspace"}:
+                         "setgroups", "setresgid", "setresuid", "fchdir_workspace", "capability_sets_clear"}:
                 try:
                     number = int(parts[1]) if len(parts) == 2 else None
                 except ValueError:
