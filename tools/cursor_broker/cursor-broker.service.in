@@ -14,7 +14,10 @@ Restart=no
 RestartPreventExitStatus=78
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_SETGID CAP_SETUID CAP_SETPCAP
-AmbientCapabilities=
+# systemd's root service identity did not make CAP_SETUID effective from the
+# bounding set alone; this setup-only ambient grant is cleared by the child
+# pre-exec transition before the unprivileged Cursor process is executed.
+AmbientCapabilities=CAP_SETUID
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only

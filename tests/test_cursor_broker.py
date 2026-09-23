@@ -182,6 +182,14 @@ def test_catalog_client_accepts_only_models_subcommand(monkeypatch, tmp_path):
     assert client.main(["models"]) == 78  # Missing route identity/socket is rejected before dispatch.
 
 
+def test_broker_unit_grants_only_setup_time_setuid_ambient_capability():
+    unit = (Path(__file__).resolve().parents[1] / "tools/cursor_broker/cursor-broker.service.in").read_text()
+    assert "NoNewPrivileges=true" in unit
+    assert "CapabilityBoundingSet=CAP_SETGID CAP_SETUID CAP_SETPCAP" in unit
+    assert "AmbientCapabilities=CAP_SETUID" in unit
+    assert "AmbientCapabilities=CAP_SETUID CAP_SETGID" not in unit
+
+
 @pytest.mark.parametrize(("failure", "expected_class"), [
     (PermissionError(13, "secret/path/must/not/persist"), "permission_denied"),
     (subprocess.SubprocessError("Exception occurred in preexec_fn; private detail"), "child_setup_failed"),
