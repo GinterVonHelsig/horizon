@@ -27,6 +27,9 @@ TOKEN = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 EXPECTED_ROUTES = {
     "gateway-delivery-disposable-file": {"role": "executor", "model": "composer-2.5", "mode": "agent", "timeout_seconds": 300},
     "cursor-independent-review": {"role": "auditor", "model": "cursor-grok-4.6-high", "mode": "ask", "timeout_seconds": 900},
+    # One non-generating account/catalog preflight. It has its own durable
+    # slot and accepts only the CLI's documented `models` subcommand.
+    "cursor-auth-catalog-preflight": {"role": "preflight", "model": None, "mode": "catalog", "timeout_seconds": 60},
 }
 
 
@@ -201,11 +204,14 @@ def _launch(config: dict, route: dict, prompt: str) -> dict:
     if type(workspace_fd) is not int:
         raise ValueError("workspace_descriptor_missing")
     executable = config["executable"]
-    argv = [executable, "-p", prompt, "--output-format", "stream-json", "--model", route["model"]]
-    if route["mode"] == "agent":
-        argv.extend(["--force", "--sandbox", "enabled", "--trust"])
+    if route["mode"] == "catalog":
+        argv = [executable, "models"]
     else:
-        argv.extend(["--mode", "ask", "--sandbox", "enabled", "--trust"])
+        argv = [executable, "-p", prompt, "--output-format", "stream-json", "--model", route["model"]]
+        if route["mode"] == "agent":
+            argv.extend(["--force", "--sandbox", "enabled", "--trust"])
+        else:
+            argv.extend(["--mode", "ask", "--sandbox", "enabled", "--trust"])
     env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": config["child_home"],
         "USER": "topdelivery", "LOGNAME": "topdelivery", "CURSOR_HOME": config["cursor_home"],
         "CURSOR_CONFIG_DIR": config["cursor_home"]}
@@ -282,17 +288,24 @@ def _launch(config: dict, route: dict, prompt: str) -> dict:
 def dispatch(config: dict, request: dict, uid: int, *, launcher=_launch) -> dict:
     if uid != config["peer_uid"]:
         return {"status": "blocked", "reason": "peer_uid_not_allowed"}
-    expected_keys = {"schema", "run_id", "task_id", "attempt_id", "role", "route_id", "cwd", "prompt"}
-    if set(request) != expected_keys or request.get("schema") != REQUEST_SCHEMA:
+    common_keys = {"schema", "run_id", "task_id", "attempt_id", "role", "route_id", "cwd", "operation"}
+    if request.get("schema") != REQUEST_SCHEMA:
         return {"status": "blocked", "reason": "request_schema_invalid"}
     if request["run_id"] != config["run_id"] or not TOKEN.fullmatch(request["task_id"]) or not TOKEN.fullmatch(request["attempt_id"]):
         return {"status": "blocked", "reason": "task_identity_not_allowlisted"}
     route = config["routes"].get(request["route_id"])
     if not route or route["role"] != request["role"] or request["cwd"] != config["workspace_root"]:
         return {"status": "blocked", "reason": "route_or_workspace_not_allowlisted"}
-    prompt = request["prompt"]
-    if not isinstance(prompt, str) or not prompt or len(prompt.encode()) > config["max_request_bytes"] // 2:
-        return {"status": "blocked", "reason": "prompt_size_invalid"}
+    if route["mode"] == "catalog":
+        if set(request) != common_keys or request["route_id"] != "cursor-auth-catalog-preflight" or request["operation"] != "models":
+            return {"status": "blocked", "reason": "catalog_preflight_request_invalid"}
+        prompt = None
+    else:
+        if set(request) != common_keys | {"prompt"} or request["operation"] != "prompt":
+            return {"status": "blocked", "reason": "request_schema_invalid"}
+        prompt = request["prompt"]
+        if not isinstance(prompt, str) or not prompt or len(prompt.encode()) > config["max_request_bytes"] // 2:
+            return {"status": "blocked", "reason": "prompt_size_invalid"}
     workspace_fd = verify_workspace(config)
     try:
         return _dispatch_with_workspace(config, request, route, prompt, workspace_fd, launcher=launcher)
@@ -317,7 +330,9 @@ def _dispatch_with_workspace(config: dict, request: dict, route: dict, prompt: s
             return {"status": "blocked", "reason": "duplicate_no_replay"}
         if len(files) >= config["max_sessions"]:
             return {"status": "blocked", "reason": "session_budget_exhausted"}
-        intent = {"identity": identity, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+        intent = {"identity": identity,
+            "input_sha256": hashlib.sha256((prompt if prompt is not None else "cursor-agent models").encode()).hexdigest(),
+            "operation": request["operation"],
             "workspace_dev": config["workspace_dev"], "workspace_ino": config["workspace_ino"],
             "state": "intent", "created_at": int(time.time())}
         _atomic(record_path, intent)

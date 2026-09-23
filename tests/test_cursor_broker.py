@@ -46,7 +46,7 @@ def request(cfg: dict, *, task="task-1", attempt="attempt-1", route="gateway-del
             role="executor", prompt="do tiny work") -> dict:
     return {"schema": server.REQUEST_SCHEMA, "run_id": cfg["run_id"], "task_id": task,
         "attempt_id": attempt, "role": role, "route_id": route,
-        "cwd": cfg["workspace_root"], "prompt": prompt}
+        "cwd": cfg["workspace_root"], "operation": "prompt", "prompt": prompt}
 
 
 def fake_launcher(calls: list, config: dict, route: dict, prompt: str) -> dict:
@@ -149,6 +149,36 @@ def test_client_rejects_model_or_flag_substitution(monkeypatch):
     monkeypatch.setenv("HORIZON_CURSOR_BROKER_ROUTE", "cursor-independent-review")
     assert client.main(["-p", "review", "--output-format", "stream-json", "--model",
         "cursor-grok-4.6", "--mode", "ask", "--sandbox", "enabled", "--trust"]) == 78
+
+
+def test_catalog_preflight_is_exact_non_generating_and_no_replay(tmp_path, monkeypatch):
+    cfg = config(tmp_path)
+    monkeypatch.setattr(server, "verify_workspace", fake_verify_workspace)
+    monkeypatch.setattr(server, "_secure_path", lambda path, **_kwargs: Path(path))
+    calls = []
+    item = {"schema": server.REQUEST_SCHEMA, "run_id": cfg["run_id"], "task_id": "catalog-1",
+        "attempt_id": "catalog-attempt-1", "role": "preflight",
+        "route_id": "cursor-auth-catalog-preflight", "cwd": cfg["workspace_root"],
+        "operation": "models"}
+    result = server.dispatch(cfg, item, os.geteuid(),
+        launcher=lambda c, r, p: calls.append((r, p)) or fake_launcher([], c, r, p))
+    assert result["status"] == "complete"
+    assert calls == [(server.EXPECTED_ROUTES["cursor-auth-catalog-preflight"], None)]
+    ledger = next((Path(cfg["ledger_root"]) / cfg["run_id"]).glob("*.json"))
+    record = json.loads(ledger.read_text())
+    assert record["operation"] == "models"
+    assert "prompt_sha256" not in record
+    assert "prompt" not in ledger.read_text()
+    again = server.dispatch(cfg, {**item, "attempt_id": "catalog-attempt-2"}, os.geteuid(),
+        launcher=lambda *_args: pytest.fail("catalog route must never replay"))
+    assert again == {"status": "blocked", "reason": "duplicate_no_replay"}
+
+
+def test_catalog_client_accepts_only_models_subcommand(monkeypatch, tmp_path):
+    monkeypatch.setenv("HORIZON_CURSOR_BROKER_ROUTE", "cursor-auth-catalog-preflight")
+    assert client.main(["-p", "do something"]) == 78
+    assert client.main(["models", "--format", "json"]) == 78
+    assert client.main(["models"]) == 78  # Missing route identity/socket is rejected before dispatch.
 
 
 def test_horizon_adapter_forwards_only_bound_broker_identity(tmp_path):

@@ -14,6 +14,7 @@ ROUTES = {
     "gateway-delivery-disposable-file": ("executor", "composer-2.5", "agent"),
     "cursor-independent-review": ("auditor", "cursor-grok-4.6-high", "ask"),
 }
+PREFLIGHT_ROUTE = "cursor-auth-catalog-preflight"
 
 
 def peer_uid(sock: socket.socket) -> int:
@@ -37,15 +38,23 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     route_id = os.environ.get("HORIZON_CURSOR_BROKER_ROUTE", "")
     expected = ROUTES.get(route_id)
-    if expected is None:
+    preflight = route_id == PREFLIGHT_ROUTE
+    if expected is None and not preflight:
         return 78
-    role, model, mode = expected
-    # Prompt is the sole free-form CLI value; flags and model are exact.
-    if len(args) < 2 or args[0] != "-p":
-        return 78
-    prompt = args[1]
-    if args != expected_argv(prompt, model, mode):
-        return 78
+    if preflight:
+        # This is a single documented, non-generating account catalog command.
+        # No prompt, model selection, or other CLI flag is accepted.
+        if args != ["models"]:
+            return 78
+        role, prompt = "preflight", None
+    else:
+        role, model, mode = expected
+        # Prompt is the sole free-form CLI value; flags and model are exact.
+        if len(args) < 2 or args[0] != "-p":
+            return 78
+        prompt = args[1]
+        if args != expected_argv(prompt, model, mode):
+            return 78
     values = {
         "schema": "horizon-cursor-broker.request.v1",
         "run_id": os.environ.get("HORIZON_CURSOR_BROKER_RUN_ID", ""),
@@ -54,8 +63,10 @@ def main(argv: list[str] | None = None) -> int:
         "role": os.environ.get("HORIZON_CURSOR_BROKER_ROLE", ""),
         "route_id": route_id,
         "cwd": os.getcwd(),
-        "prompt": prompt,
     }
+    values["operation"] = "models" if preflight else "prompt"
+    if not preflight:
+        values["prompt"] = prompt
     if values["role"] != role:
         return 78
     path = os.environ.get("HORIZON_CURSOR_BROKER_SOCKET", "")
@@ -99,6 +110,15 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = result.get("exit_code")
         if type(exit_code) is not int or not 0 <= exit_code <= 255:
             raise ValueError("broker_exit_code_invalid")
+        if preflight:
+            # Do not relay account/catalog payloads into worker logs. The
+            # broker ledger retains only byte counts and hashes.
+            if exit_code == 0 and stdout:
+                os.write(sys.stdout.fileno(), b"cursor_auth_catalog_preflight=passed\n")
+            else:
+                os.write(sys.stderr.fileno(), b"cursor_auth_catalog_preflight=failed\n")
+                return 78 if exit_code == 0 else exit_code
+            return 0
         return exit_code
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"cursor_broker_transport_failure:{type(exc).__name__}\n")

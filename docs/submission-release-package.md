@@ -26,6 +26,14 @@ Blocked/denied exits78, not zero. Submission status=ok includes the canonical
 submission_status=created/existing; preserved_disabled/awaiting_controller stays
 blocked. Health reports configured readiness, not proof of active production.
 
+The Cursor broker also has one explicit `cursor-auth-catalog-preflight` route.
+Its only accepted client command is the documented non-generating `models`
+subcommand; prompts, model flags, alternate arguments, and retries are rejected.
+It consumes one durable broker slot and returns only a pass/fail marker to the
+worker. The broker ledger retains byte counts and output hashes, not the account
+catalog payload. This preflight is not an executor/reviewer route and cannot
+register or complete a Horizon task.
+
 ## Package and configuration
 
 ```
