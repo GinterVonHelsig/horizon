@@ -387,68 +387,15 @@ class PostgresRepository:
                 if expected_task_id is not None:
                     raise PermissionError("one-shot expected fresh claim cannot reclaim an active attempt")
                 lease_expired = bool(owned["lease_expired"])
-                epoch_mismatch = int(owned["controller_epoch"]) != int(controller_epoch)
                 if lease_expired:
                     return {
                         "needs_cleanup": True,
                         "attempt_id": owned["active_attempt_id"],
                         "task_id": owned["task_id"],
                     }
-                fence_token = int(owned["fence_token"])
-                self._assert_controller_epoch(
-                    cur,
-                    run_id,
-                    controller_epoch,
-                    scope_kind="workflow",
-                    fence_token=fence_token,
-                )
-                if epoch_mismatch:
-                    cur.execute(
-                        """
-                        UPDATE task_attempts
-                        SET controller_epoch = %s,
-                            heartbeat_at = clock_timestamp(),
-                            lease_expires_at = clock_timestamp() + (%s || ' seconds')::interval,
-                            status = 'running'
-                        WHERE attempt_id = %s AND task_id = %s AND fence_token = %s
-                          AND run_id = %s AND status = 'running' AND owner = %s
-                        """,
-                        (
-                            controller_epoch,
-                            lease_seconds,
-                            owned["active_attempt_id"],
-                            owned["task_id"],
-                            fence_token,
-                            run_id,
-                            owner,
-                        ),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        UPDATE task_attempts
-                        SET heartbeat_at = clock_timestamp(),
-                            lease_expires_at = clock_timestamp() + (%s || ' seconds')::interval,
-                            status = 'running'
-                        WHERE attempt_id = %s AND task_id = %s AND fence_token = %s
-                          AND controller_epoch = %s AND run_id = %s AND status = 'running'
-                        """,
-                        (
-                            lease_seconds,
-                            owned["active_attempt_id"],
-                            owned["task_id"],
-                            fence_token,
-                            controller_epoch,
-                            run_id,
-                        ),
-                    )
-                if cur.rowcount != 1:
-                    return None
-                view = self._task_view(
-                    cur, owned["task_id"], owned["active_attempt_id"], fence_token
-                )
-                view["reclaimed"] = True
-                return view
+                # A shared owner label does not prove process identity. Never
+                # return an unexpired attempt to a second polling process.
+                return None
             cur.execute(
                 """
                 SELECT longspan_claim_next_parent_task(

@@ -1,0 +1,5 @@
+# TEMPLATE ONLY. Step 8 provisions only /var/lib/top-delivery-canary via the
+# existing canary workspace policy; these broker/runtime paths belong to step 9.
+d /var/lib/top-delivery/cursor-broker 0700 root root -
+d /var/lib/top-delivery/adapter-runtime 0755 root topdelivery -
+d /var/lib/top-delivery/adapter-runtime/home 0700 topdelivery topdelivery -

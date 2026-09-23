@@ -443,9 +443,9 @@ def assert_downgrade_allowed(db_url: str, revision: str) -> str:
 
 def run_migrations(db_url: str) -> None:
     if is_disposable_test_database(db_url):
-        alembic_command(db_url, "upgrade", "016_horizon_prereq_corr")
+        alembic_command(db_url, "upgrade", "017_goal_completion_disposable")
     else:
-        alembic_command(db_url, "upgrade", "020_horizon_prereq_corr_live")
+        alembic_command(db_url, "upgrade", "021_goal_completion")
 
 
 ALLOWED_ALEMBIC_COMMANDS = frozenset({"upgrade", "downgrade"})

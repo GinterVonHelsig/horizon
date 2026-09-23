@@ -119,7 +119,7 @@
       "parent_id": "ATS-PROGRAM",
       "objective": "Track and close Harness, Signal, auth correlation work under Horizon",
       "scope_targets": "See child leaves",
-      "owner_role": "Communications gateway + auth",
+      "owner_role": "Comms Relay + auth",
       "dependencies": [
         "ATS-PROGRAM"
       ],
@@ -498,8 +498,8 @@
       "section_path": "3.COMMS/Authenticated status and Q&A correlation",
       "parent_id": "ATS-COM",
       "objective": "Durable correlation across harnesses and Signal",
-      "scope_targets": "top-delivery-auth.service; signal adapter; host gateway",
-      "owner_role": "Communications owner",
+      "scope_targets": "top-delivery-auth.service; signal adapter; Comms Relay host submission transport (legacy top-delivery-host-gateway)",
+      "owner_role": "Comms Relay owner",
       "dependencies": [
         "ATS-SEC-001"
       ],

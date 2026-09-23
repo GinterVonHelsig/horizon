@@ -1,0 +1,85 @@
+{
+  "repository": "GinterVonHelsig/TOP-DELIVERY",
+  "historical_sha": "f2658c33c9f881be59f25608038f4f585641e0a5",
+  "comparison_at_repair_sha": "e8a4be767ad6b9c288a3ca69a0bda3579b62c786",
+  "sources": [
+    {
+      "revision": "001_initial",
+      "historical_git_blob": "8c76d1490ede343c69bd8f0bbf9dba917cbe303c",
+      "current_git_blob": "8c76d1490ede343c69bd8f0bbf9dba917cbe303c",
+      "match": true
+    },
+    {
+      "revision": "002_event_sequence",
+      "historical_git_blob": "ec9130ea5a664b94cf4b40f457959e11b2a00ae4",
+      "current_git_blob": "ec9130ea5a664b94cf4b40f457959e11b2a00ae4",
+      "match": true
+    },
+    {
+      "revision": "003_commit_order_and_invariants",
+      "historical_git_blob": "50a77139117f6084d01b73fb3ab2482a4ac27854",
+      "current_git_blob": "50a77139117f6084d01b73fb3ab2482a4ac27854",
+      "match": true
+    },
+    {
+      "revision": "004_longspan_workflow",
+      "historical_git_blob": "101e2b9f277bab8da9f6a004f3b2aaa2e4f800e1",
+      "current_git_blob": "101e2b9f277bab8da9f6a004f3b2aaa2e4f800e1",
+      "match": true
+    },
+    {
+      "revision": "005_longspan_hardening",
+      "historical_git_blob": "8c224b40b6bf51b45bc9bafe0844205830f48cf6",
+      "current_git_blob": "8c224b40b6bf51b45bc9bafe0844205830f48cf6",
+      "match": true
+    },
+    {
+      "revision": "006_longspan_authority",
+      "historical_git_blob": "85995dd509fde78ac6692e157ab39a20cf552d4b",
+      "current_git_blob": "85995dd509fde78ac6692e157ab39a20cf552d4b",
+      "match": true
+    },
+    {
+      "revision": "007_longspan_authority_hardening",
+      "historical_git_blob": "1397a9181d9b99c44bbcaa598b75f39a0301e532",
+      "current_git_blob": "1397a9181d9b99c44bbcaa598b75f39a0301e532",
+      "match": true
+    },
+    {
+      "revision": "008_longspan_authority_repair",
+      "historical_git_blob": "7d079114ca7c99b6c8c98763f93072402f091933",
+      "current_git_blob": "7d079114ca7c99b6c8c98763f93072402f091933",
+      "match": true
+    },
+    {
+      "revision": "009_goal_schedule_task",
+      "historical_git_blob": "14c286d2ee6bd6ee817550a6be74974c3c25ca3d",
+      "current_git_blob": "14c286d2ee6bd6ee817550a6be74974c3c25ca3d",
+      "match": true
+    },
+    {
+      "revision": "010_goal_claim_parent_task",
+      "historical_git_blob": "f1667151d9f76f1b46e69a71a92924d89a878f2e",
+      "current_git_blob": "f1667151d9f76f1b46e69a71a92924d89a878f2e",
+      "match": true
+    },
+    {
+      "revision": "011_goal_claim_fence_token_fix",
+      "historical_git_blob": "06d58d1100e2178c81221a016cb2792dcfcf1b21",
+      "current_git_blob": "06d58d1100e2178c81221a016cb2792dcfcf1b21",
+      "match": true
+    },
+    {
+      "revision": "012_claim_parent_scope_fix",
+      "historical_git_blob": "520a8cb5a19ae28cec010836bccb4f122edf5be3",
+      "current_git_blob": "520a8cb5a19ae28cec010836bccb4f122edf5be3",
+      "match": true
+    },
+    {
+      "revision": "013_cleanup_expired_attempt",
+      "historical_git_blob": "7718fa54b1cc187159a3f79ca24536d84032af3e",
+      "current_git_blob": "7718fa54b1cc187159a3f79ca24536d84032af3e",
+      "match": true
+    }
+  ]
+}

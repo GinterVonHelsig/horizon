@@ -28,10 +28,15 @@ def build_codex_argv(*, executable: str, prompt: str, codex_home: str, model: st
 
 def build_cursor_argv(
     *, executable: str, prompt: str, model: str, approval_mode: str,
-    worktree: str | None,
+    worktree: str | None, cursor_mode: str | None = None,
 ) -> list[str]:
     argv = [executable, "-p", prompt, "--output-format", "stream-json", "--model", model]
-    argv.append("--force" if approval_mode == "never" else "--approve-mcps")
+    if cursor_mode == "ask":
+        argv.extend(["--mode", "ask", "--sandbox", "enabled", "--trust"])
+    else:
+        argv.append("--force" if approval_mode == "never" else "--approve-mcps")
+        if cursor_mode == "agent":
+            argv.extend(["--sandbox", "enabled", "--trust"])
     if worktree:
         argv.extend(["--worktree", worktree])
     return argv
@@ -126,6 +131,9 @@ class CliHarnessAdapter:
     approval_mode: str | None = None
     worktree: str | None = None
     endpoint: str | None = None
+    cursor_mode: str | None = None
+    broker_socket: str | None = None
+    broker_route_id: str | None = None
     _cancel_requested: bool = False
 
     def start(self, request: HarnessRequest) -> HarnessResult:
@@ -149,6 +157,19 @@ class CliHarnessAdapter:
         self.runner.artifact_dir = Path(request.artifact_dir)
         argv = self._build_argv(request.prompt)
         extra_env = {"CODEX_HOME": self.codex_home} if self.kind == "codex_cli" and self.codex_home else None
+        if self.broker_socket is not None:
+            role = request.metadata.get("role") if isinstance(request.metadata, dict) else None
+            if role not in {"executor", "auditor"} or not self.broker_route_id:
+                return HarnessResult(self.adapter_id, self.kind, self.model, self.provider, "failure", 78,
+                    0.0, None, None, None, None, None, "broker_identity_missing", False)
+            extra_env = {
+                "HORIZON_CURSOR_BROKER_SOCKET": self.broker_socket,
+                "HORIZON_CURSOR_BROKER_ROUTE": self.broker_route_id,
+                "HORIZON_CURSOR_BROKER_RUN_ID": request.run_id,
+                "HORIZON_CURSOR_BROKER_TASK_ID": request.task_id,
+                "HORIZON_CURSOR_BROKER_ATTEMPT_ID": request.attempt_id,
+                "HORIZON_CURSOR_BROKER_ROLE": role,
+            }
         role = request.metadata.get("role") if isinstance(request.metadata, dict) else None
         auditor = role == "auditor"
         parser = (lambda text: parse_cli_output(self.kind, text)) if auditor else None
@@ -213,9 +234,10 @@ class CliHarnessAdapter:
         if self.kind == "codex_cli":
             return build_codex_argv(executable=self.executable, prompt=prompt,
                                     codex_home=self.codex_home or "", model=self.model)
-        if self.kind == "cursor_cli":
+        if self.kind in {"cursor_cli", "gateway_delivery"}:
             return build_cursor_argv(executable=self.executable, prompt=prompt, model=self.model,
-                                     approval_mode=self.approval_mode or "never", worktree=self.worktree)
+                                     approval_mode=self.approval_mode or "never", worktree=self.worktree,
+                                     cursor_mode=self.cursor_mode or ("agent" if self.kind == "gateway_delivery" else None))
         if self.kind == "claude_cli":
             return build_claude_argv(executable=self.executable, prompt=prompt, model=self.model,
                                      permission_mode=self.permission_mode or "default")
@@ -241,4 +263,6 @@ def cli_adapter_from_config(adapter_id: str, config: dict[str, Any], artifact_di
         codex_home=config.get("codex_home"), permission_mode=config.get("permission_mode"),
         approval_mode=config.get("approval_mode"), worktree=config.get("worktree"),
         endpoint=config.get("endpoint"),
+        cursor_mode=config.get("cursor_mode"),
+        broker_socket=config.get("broker_socket"), broker_route_id=config.get("broker_route_id"),
     )

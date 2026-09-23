@@ -11,6 +11,7 @@ import pytest
 from parent_controller import ParentController
 from program_ingest import parse_program_file, project_node_reference
 from project_ledger import ProjectLedgerService
+from test_only.recovery_fakes import route_config
 
 FIXTURE = Path(__file__).resolve().parent / "tests" / "fixtures" / "master-program-v1.json"
 BASELINE = Path(
@@ -28,6 +29,8 @@ def controller(db_url: str, artifact_root: Path) -> ParentController:
         db_url,
         controller_owner="horizon-prereq-test",
         artifact_root=artifact_root,
+        # Admission/persistence only: these are SIMULATED bindings, not Gateway.
+        adapter_config=route_config("gateway-delivery", "openrouter-independent-review"),
     )
     try:
         yield parent
@@ -137,3 +140,33 @@ def test_prerequisite_orchestration_detects_delivers_and_is_idempotent(
     )
     assert satisfied == []
     assert target.acceptance_criteria_version.startswith("horizon-v1-contract")
+
+
+@pytest.mark.parametrize("configuration", [None, route_config()])
+def test_missing_gateway_binding_creates_no_provider_state(
+    db_url: str, artifact_root: Path, configuration: dict | None,
+) -> None:
+    parent = ParentController(
+        db_url, controller_owner="missing-gateway-test", artifact_root=artifact_root,
+        adapter_config=configuration,
+    )
+    try:
+        parent.register_run(RUN_ID)
+        parent.schedule_task(RUN_ID, PARENT_TASK_ID, "disposable binding rejection")
+        claimed = parent.claim_next(RUN_ID, "worker")
+        assert claimed is not None
+        attempt, fence = parent.resolve_parent_attempt(claimed.task_id, claimed.generation or "")
+        with pytest.raises(ValueError, match="missing adapter"):
+            parent.create_subworkflow_handoff(
+                run_id=RUN_ID, parent_task_id=PARENT_TASK_ID,
+                parent_attempt_id=attempt, parent_fence_token=fence,
+                failure_code="BLOCKED_HORIZON_PREREQ_MISSING",
+            )
+        with parent._repo.transaction() as cur:
+            cur.execute("SELECT COUNT(*) AS count FROM subworkflow_handoffs WHERE run_id = %s", (RUN_ID,))
+            assert int(cur.fetchone()["count"]) == 0
+            cur.execute("SELECT COUNT(*) AS count FROM parent_tasks WHERE run_id = %s", (RUN_ID,))
+            assert int(cur.fetchone()["count"]) == 1  # Original parent only.
+        assert not (artifact_root / "runs" / RUN_ID / "handoffs").exists()
+    finally:
+        parent.close()

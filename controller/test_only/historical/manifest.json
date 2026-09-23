@@ -1,0 +1,229 @@
+{
+  "test_only": true,
+  "original014_sha256": "be05d24299ae93dc3d0c5244d9a10266c2b098327a644adbf575dde954ee672c",
+  "provenance_limit": "Archived local source and deployment receipts; not signed attestations. No production DB data.",
+  "sources": [
+    {
+      "path": "alembic.ini",
+      "packaged": "controller/alembic.ini",
+      "sha256": "db6469ee8571a69112de5cdc8f102992e19b9c8c108f7488530140f5d1169ef2",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/alembic.ini"
+    },
+    {
+      "path": "attestation.py",
+      "packaged": "controller/attestation.py",
+      "sha256": "749290bd4d48161db20e647e9d209a74a10fd6a785f8fc3575276317a48ab0dd",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/attestation.py"
+    },
+    {
+      "path": "authority_pins.py",
+      "packaged": "controller/authority_pins.py",
+      "sha256": "f44ef4c52378142c1bc545be46e307a08dcb7a9004504ce7d650095bcc1bf9fd",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/authority_pins.py"
+    },
+    {
+      "path": "authority_test_seam.py",
+      "packaged": "controller/authority_test_seam.py",
+      "sha256": "646f02c608ff99a52e7837c19fed820624bbc1eecfe3a53d3a891613e16e90f3",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/authority_test_seam.py"
+    },
+    {
+      "path": "comms01_scope.py",
+      "packaged": "controller/test_only/historical/source/comms01_scope.py",
+      "sha256": "785cc9a175294764e0a329d4869cda366da229b86beb15e21797a4c6a8aaa14a",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/comms01_scope.py"
+    },
+    {
+      "path": "db.py",
+      "packaged": "controller/test_only/historical/source/db.py",
+      "sha256": "bc281ef3affed81be433e9f48b60c486db4c3d4c73fce8eb7f9a9f9b4d231111",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/db.py"
+    },
+    {
+      "path": "disposable_capability.py",
+      "packaged": "controller/disposable_capability.py",
+      "sha256": "bcedb70ab532e7a7602efb4ee1b741ea53d96ca2ec1fda856e42b1978c6dc237",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/disposable_capability.py"
+    },
+    {
+      "path": "exceptions.py",
+      "packaged": "controller/test_only/historical/source/exceptions.py",
+      "sha256": "99fc1b5615241c6e8253cd5837d59a8254cbc0b1760e3aa60ff3e4cd9b6a7f4e",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/exceptions.py"
+    },
+    {
+      "path": "longspan_crypto.py",
+      "packaged": "controller/longspan_crypto.py",
+      "sha256": "5810aff0046b3e09282bf1e93a76d80154e782976957a428ad64e5a1cf406d33",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/longspan_crypto.py"
+    },
+    {
+      "path": "migration_bootstrap.py",
+      "packaged": "controller/migration_bootstrap.py",
+      "sha256": "bc27bf5f125dad571f32ba3878f97f4d2ffbca1ca0fd2e625ffe6ec3dccef05b",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migration_bootstrap.py"
+    },
+    {
+      "path": "migration_catalog.py",
+      "packaged": "controller/test_only/historical/source/migration_catalog.py",
+      "sha256": "2fc18dc6d6f547826bed3db5c6c160793a44e360235bf23cdf5fd90a3e8209b8",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migration_catalog.py"
+    },
+    {
+      "path": "migration_source_anchor.py",
+      "packaged": "controller/test_only/historical/source/migration_source_anchor.py",
+      "sha256": "09aae8bc41600f67dfa7ede4239a035c744e60056fea557a99c14317d90b1f56",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migration_source_anchor.py"
+    },
+    {
+      "path": "migration_target.py",
+      "packaged": "controller/test_only/historical/source/migration_target.py",
+      "sha256": "76c4f68beda53c26242e9d6fe710b3363d6ab54905f0b6e25a406a8b93ef712e",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migration_target.py"
+    },
+    {
+      "path": "migrations/env.py",
+      "packaged": "controller/test_only/historical/source/migrations/env.py",
+      "sha256": "f8e7e005af5be257f2def4d538b9d4445f8ee780ae7513500950f672493e6550",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/env.py"
+    },
+    {
+      "path": "migrations/versions/001_initial.py",
+      "packaged": "controller/migrations/versions/001_initial.py",
+      "sha256": "36dbf6a8e4cb478cadaa5715b69de26ee545a37d5ec2a014d181c84b5d5731d7",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/001_initial.py"
+    },
+    {
+      "path": "migrations/versions/002_event_sequence.py",
+      "packaged": "controller/migrations/versions/002_event_sequence.py",
+      "sha256": "8a6442b1742c6c6643b96d90e2ec89121d7b92905c5d064f0df7a108a190a512",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/002_event_sequence.py"
+    },
+    {
+      "path": "migrations/versions/003_commit_order_and_invariants.py",
+      "packaged": "controller/migrations/versions/003_commit_order_and_invariants.py",
+      "sha256": "8df6d129f385ac63e85930ce400c2982500cdbe8eda1c91b25b2ce2db64897d5",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/003_commit_order_and_invariants.py"
+    },
+    {
+      "path": "migrations/versions/004_longspan_workflow.py",
+      "packaged": "controller/migrations/versions/004_longspan_workflow.py",
+      "sha256": "bc01d0a94963dc64d36d1edab9cf2e602f5f96205f33c717b02f553fd3577b32",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/004_longspan_workflow.py"
+    },
+    {
+      "path": "migrations/versions/005_longspan_hardening.py",
+      "packaged": "controller/migrations/versions/005_longspan_hardening.py",
+      "sha256": "bd0a4a166b5a59fada29f48a146532f98ac5c7a9f46b301b7dcd1a145bd5401f",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/005_longspan_hardening.py"
+    },
+    {
+      "path": "migrations/versions/006_longspan_authority.py",
+      "packaged": "controller/migrations/versions/006_longspan_authority.py",
+      "sha256": "b6a23a1240fbeb60066bb580ffcd28d5776e41f395ec6256a2cf94ebbff530eb",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/006_longspan_authority.py"
+    },
+    {
+      "path": "migrations/versions/007_longspan_authority_hardening.py",
+      "packaged": "controller/migrations/versions/007_longspan_authority_hardening.py",
+      "sha256": "2782b879d23226797d95f8666d3a6d546f9d749bf80ceb777291d44501d4c39e",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/007_longspan_authority_hardening.py"
+    },
+    {
+      "path": "migrations/versions/008_longspan_authority_repair.py",
+      "packaged": "controller/migrations/versions/008_longspan_authority_repair.py",
+      "sha256": "90c5592edb05cbeff52268dca2654bafeb87da40c7ddca37428a9a0ed0c3c62d",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/008_longspan_authority_repair.py"
+    },
+    {
+      "path": "migrations/versions/009_goal_schedule_task.py",
+      "packaged": "controller/migrations/versions/009_goal_schedule_task.py",
+      "sha256": "7f0c36e0064a5c149f8c671168df5dd4d07d7fdcef427389ee45d6d2aed647bd",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/009_goal_schedule_task.py"
+    },
+    {
+      "path": "migrations/versions/010_goal_claim_parent_task.py",
+      "packaged": "controller/migrations/versions/010_goal_claim_parent_task.py",
+      "sha256": "70c6419caffaa56d1f8313af9fbe2d2e260c37c5c42924f8414bdbb81628ae87",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/010_goal_claim_parent_task.py"
+    },
+    {
+      "path": "migrations/versions/011_goal_claim_fence_token_fix.py",
+      "packaged": "controller/migrations/versions/011_goal_claim_fence_token_fix.py",
+      "sha256": "ed5afacaf1475b83615f424f0eb102b00131b3d18c96045eb8c2c7a82a40c56e",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/011_goal_claim_fence_token_fix.py"
+    },
+    {
+      "path": "migrations/versions/012_claim_parent_scope_fix.py",
+      "packaged": "controller/migrations/versions/012_claim_parent_scope_fix.py",
+      "sha256": "cb05019f949de3dc8fd5daba44bf4d1e43c3508a681cbf0a53639a4bfd68dfd7",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/012_claim_parent_scope_fix.py"
+    },
+    {
+      "path": "migrations/versions/013_cleanup_expired_attempt.py",
+      "packaged": "controller/migrations/versions/013_cleanup_expired_attempt.py",
+      "sha256": "911d718a54a36148d1b4410fbce75e1107f569dde99dfcf7c9c1711e32fc4e7b",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/013_cleanup_expired_attempt.py"
+    },
+    {
+      "path": "migrations/versions/014_requeue_blocked_parent_task.py",
+      "packaged": "controller/test_only/historical/source/migrations/versions/014_requeue_blocked_parent_task.py",
+      "sha256": "be05d24299ae93dc3d0c5244d9a10266c2b098327a644adbf575dde954ee672c",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/migrations/versions/014_requeue_blocked_parent_task.py"
+    },
+    {
+      "path": "operator_asymmetric.py",
+      "packaged": "controller/operator_asymmetric.py",
+      "sha256": "fdc5d8813f8743c90858254e0c635cac4f4343549295c537703785b085145391",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/operator_asymmetric.py"
+    },
+    {
+      "path": "pinned_trust.py",
+      "packaged": "controller/pinned_trust.py",
+      "sha256": "6637917533ed4373dbd7fae7242ef51aed03b3b61d1c285ab5db549d521ad714",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/pinned_trust.py"
+    },
+    {
+      "path": "workflow_database_target.py",
+      "packaged": "controller/workflow_database_target.py",
+      "sha256": "c95cde39dc5f112fb7d6f36fdd094387143599e1b7d0c79c7d89067a622b9734",
+      "recovered_from": "/opt/operator-harness/worktrees/20260826T-local-delivery-integration/goal-runner/controller/workflow_database_target.py"
+    },
+    {
+      "path": "migrations/candidates/015_recover_executor_contract_failure.py",
+      "packaged": "controller/test_only/historical/source/migrations/candidates/015_recover_executor_contract_failure.py",
+      "sha256": "c14a8f9b43c1410abc0d9e1ac3637f8e42377306a9beaa9c902a6bc79040f225",
+      "recovered_from": "/opt/operator-harness/worktrees/20260827T-executor-contract-recovery/goal-runner/controller/migrations/candidates/015_recover_executor_contract_failure.py"
+    },
+    {
+      "path": "migrations/candidates/016_recover_exhausted_executor_contract_once.py",
+      "packaged": "controller/test_only/historical/source/migrations/candidates/016_recover_exhausted_executor_contract_once.py",
+      "sha256": "83ea3e9d957df81cc961896973a7a1925bd7270c1af06dee8cb260b894730113",
+      "recovered_from": "/opt/operator-harness/worktrees/20260827T-executor-contract-recovery/goal-runner/controller/migrations/candidates/016_recover_exhausted_executor_contract_once.py"
+    },
+    {
+      "path": "sql/015_recover_executor_contract_failure.sql",
+      "packaged": "controller/sql/015_recover_executor_contract_failure.sql",
+      "sha256": "c05232aead7d048b5b3b4b9f4f4976af8e0a23a9c582a74378b6e821d52a3071",
+      "recovered_from": "/opt/operator-harness/worktrees/20260827T-executor-contract-recovery/goal-runner/controller/sql/015_recover_executor_contract_failure.sql"
+    },
+    {
+      "path": "sql/015_downgrade_restore_014_scope.sql",
+      "packaged": "controller/sql/015_downgrade_restore_014_scope.sql",
+      "sha256": "858bdd0c0d14efa8976995e21ce1987166f056dabfa3a746602a1c828a9d6a84",
+      "recovered_from": "/opt/operator-harness/worktrees/20260827T-executor-contract-recovery/goal-runner/controller/sql/015_downgrade_restore_014_scope.sql"
+    },
+    {
+      "path": "sql/016_recover_exhausted_executor_contract_once.sql",
+      "packaged": "controller/sql/016_recover_exhausted_executor_contract_once.sql",
+      "sha256": "bc1530d6e127d5bad6175bf23fc8e392ea4e8dd2111c9d9d6c890e96b190082b",
+      "recovered_from": "/opt/operator-harness/worktrees/20260827T-executor-contract-recovery/goal-runner/controller/sql/016_recover_exhausted_executor_contract_once.sql"
+    },
+    {
+      "path": "sql/016_downgrade_restore_015_scope.sql",
+      "packaged": "controller/sql/016_downgrade_restore_015_scope.sql",
+      "sha256": "e5a51f2de1d46642d4037b8732e7d0eee0d8ff853db1a62feea2744c8d812afd",
+      "recovered_from": "/opt/operator-harness/worktrees/20260827T-executor-contract-recovery/goal-runner/controller/sql/016_downgrade_restore_015_scope.sql"
+    }
+  ]
+}

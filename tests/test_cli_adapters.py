@@ -118,7 +118,7 @@ def test_cli_jsonl_event_parsers_use_final_structured_message() -> None:
 
 def test_codex_home_is_passed_only_by_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     exe = tmp_path / "codex"
-    exe.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"type":"item.completed","item":{"type":"agent_message","text":"{}"}}\'\n')
+    exe.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"type":"item.completed","item":{"type":"agent_message","text":"{}"}}\' \'{"type":"turn.completed"}\'\n')
     exe.chmod(0o700)
     adapter = CliHarnessAdapter(
         adapter_id="codex", kind="codex_cli", executable=str(exe), model="m", provider="openai",
@@ -135,7 +135,7 @@ def test_codex_home_is_passed_only_by_environment(tmp_path: Path, monkeypatch: p
 
 def test_cli_resume_writes_checkpoint_and_executes(tmp_path: Path) -> None:
     exe = tmp_path / "claude"
-    exe.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"type":"assistant","message":{"content":"{}"}}\'\n')
+    exe.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"type":"assistant","message":{"content":"{}"}}\' \'{"type":"result","is_error":false}\'\n')
     exe.chmod(0o700)
     adapter = CliHarnessAdapter(
         adapter_id="x", kind="claude_cli", executable=str(exe), model="m", provider="p",

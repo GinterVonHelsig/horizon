@@ -213,8 +213,8 @@ def test_executor_success_without_auditor_approval_does_not_verify(artifact_root
     }
     worker = TaskWorker(controller, artifact_root, adapters)  # type: ignore[arg-type]
     worker.run_once("run-1", "worker-1")
-    assert controller.retries == ["task-1"]
-    assert controller.completions == []
+    assert controller.retries == []
+    assert controller.completions[-1] == ("task-1", "blocked")
 
 
 def test_non_retryable_failure_blocks_task(artifact_root: Path) -> None:
@@ -236,8 +236,9 @@ def test_auditor_payload_must_match_full_schema(artifact_root: Path) -> None:
     object.__setattr__(invalid, "structured_payload", {"verdict": "approve", "unexpected": True})
     adapters = {"executor": ScriptedAdapter("executor", [_success_payload()]), "auditor": ScriptedAdapter("auditor", [invalid])}
     result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
-    assert result and result.terminal_state == "retry_queued"
-    assert controller.completions == []
+    assert result and result.terminal_state == "blocked:execution_outcome_requires_review"
+    assert controller.completions == [("task-1", "blocked")]
+    assert not controller.retries
 
 
 def test_failed_auditor_cannot_approve(artifact_root: Path) -> None:
@@ -247,8 +248,9 @@ def test_failed_auditor_cannot_approve(artifact_root: Path) -> None:
     object.__setattr__(failed_approve, "structured_payload", {"verdict": "approve"})
     adapters = {"executor": ScriptedAdapter("executor", [_success_payload()]), "auditor": ScriptedAdapter("auditor", [failed_approve])}
     result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
-    assert result and result.terminal_state == "retry_queued"
-    assert controller.completions == []
+    assert result and result.terminal_state == "blocked:execution_outcome_requires_review"
+    assert controller.completions == [("task-1", "blocked")]
+    assert not controller.retries
 
 
 def test_auditor_receives_executor_evidence_acceptance_and_task_cwd(artifact_root: Path) -> None:
@@ -294,9 +296,10 @@ def test_cleanup_runs_on_exception_and_exception_is_mapped(artifact_root: Path) 
     adapters = {"executor": BrokenAdapter("executor", []), "auditor": ScriptedAdapter("auditor", [])}
     worker = TaskWorker(controller, artifact_root, adapters)  # type: ignore[arg-type]
     result = worker.run_once("run-1", "worker-1")
-    assert result and result.terminal_state == "retry_queued"
+    assert result and result.terminal_state == "blocked:execution_outcome_requires_review"
     assert controller.cleanups == ["attempt-task-1"]
-    assert controller.events.index("retry") < controller.events.index("cleanup")
+    assert controller.events.index("complete") < controller.events.index("cleanup")
+    assert not controller.retries
 
 
 def test_child_process_uses_isolated_attempt_workdir_not_artifact_root(artifact_root: Path) -> None:
@@ -365,16 +368,16 @@ def test_worker_records_content_hashed_evidence(artifact_root: Path) -> None:
     assert controller.evidence[0]["artifact_path"].startswith("runs/run-1/attempts/attempt-task-1/executor/")
 
 
-def test_worker_retry_policy_parks_auth_but_retries_timeout(artifact_root: Path) -> None:
-    for classification, retryable, expected in [("auth_failure", False, "parked"), ("timeout", True, "retry_queued")]:
-        controller = FakeController()
-        controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
-        adapters = {"executor": ScriptedAdapter("executor", [_failure(retryable, classification)]), "auditor": ScriptedAdapter("auditor", [])}
-        result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
-        assert result and result.terminal_state == expected
+@pytest.mark.parametrize("classification,retryable,expected", [("auth_failure", False, "parked"), ("timeout", True, "blocked:execution_outcome_requires_review")])
+def test_worker_retry_policy_parks_auth_but_blocks_uncertain_timeout(artifact_root: Path, classification, retryable, expected) -> None:
+    controller = FakeController()
+    controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
+    adapters = {"executor": ScriptedAdapter("executor", [_failure(retryable, classification)]), "auditor": ScriptedAdapter("auditor", [])}
+    result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
+    assert result and result.terminal_state == expected
 
 
-def test_shutdown_cancelled_executor_requeues_instead_of_blocking(artifact_root: Path) -> None:
+def test_shutdown_cancelled_executor_blocks_uncertain_effects(artifact_root: Path) -> None:
     controller = FakeController()
     controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
     cancelled = _failure(False, "cancelled")
@@ -383,9 +386,9 @@ def test_shutdown_cancelled_executor_requeues_instead_of_blocking(artifact_root:
         "auditor": ScriptedAdapter("auditor", []),
     }
     result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
-    assert result and result.terminal_state == "retry_queued"
-    assert controller.retries == ["task-1"]
-    assert controller.completions == []
+    assert result and result.terminal_state == "blocked:execution_outcome_requires_review"
+    assert controller.retries == []
+    assert controller.completions == [("task-1", "blocked")]
 
 
 def test_task_metadata_merges_with_goal_spec_workstream_routes(artifact_root: Path) -> None:
@@ -453,7 +456,7 @@ class RecoveringFakeController(ProductionShapedController):
         return dict(self.recover_payload)
 
 
-def test_malformed_executor_output_recovers_on_attempt_zero(artifact_root: Path) -> None:
+def test_malformed_executor_output_blocks_without_replaying(artifact_root: Path) -> None:
     controller = RecoveringFakeController()
     controller.tasks["task-1"] = FakeTask(
         "task-1", "run-1", "obj", state="scheduled", attempt=0
@@ -466,6 +469,6 @@ def test_malformed_executor_output_recovers_on_attempt_zero(artifact_root: Path)
     }
     result = TaskWorker(controller, artifact_root, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
     assert result is not None
-    assert result.terminal_state == "retry_queued"
-    assert controller.recoveries == [0]
-    assert controller.completions == []
+    assert result.terminal_state == "blocked:executor_outcome_requires_review"
+    assert controller.recoveries == []
+    assert controller.completions == [("task-1", "blocked")]

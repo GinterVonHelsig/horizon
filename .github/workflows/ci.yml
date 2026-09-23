@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, "disposable/**"]
+    branches: [main, "disposable/**", "codex/repair-horizon-recovery"]
 
 jobs:
   focused-unit:
@@ -25,14 +25,22 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install focused unit dependencies
-        run: python3 -m pip install pytest pyyaml cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
+        run: python3 -m pip install pytest pyyaml==6.0.2 cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
       - name: Run host-safe unit tests
         env:
           PYTHONPATH: controller
         run: |
-          python3 -m pytest -q --tb=short \
+          python3 -m pytest -q -ra --tb=short \
             tests/test_openrouter_budget.py \
             tests/test_model_routing.py \
+            tests/test_external_review_execution.py \
+            tests/test_review_release_package.py \
+            tests/test_submission_release_package.py \
+            tests/test_qualification_profile.py \
+            tests/test_qualification_client.py \
+            tests/test_cli_adapters.py \
+            tests/test_http_adapters.py \
+            tests/test_f2_model_identity.py \
             tests/test_auditor_bind.py \
             tests/test_retry_task_exhaust_order.py \
             tests/test_pinned_trust_session.py \
@@ -45,3 +53,62 @@ jobs:
             tests/test_goal_cli.py \
             tests/test_artifact_owner.py \
             tests/test_goal_dependencies.py
+          python3 -m pytest -q tests/test_comms_relay_names.py
+          python3 -m pytest -q tests/test_privileged_isolation.py tests/test_migration_target_paths.py
+
+  disposable-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install pytest pyyaml==6.0.2 cryptography==43.0.0 psycopg2-binary==2.9.10 alembic==1.13.2
+      - name: Prepare isolated test prerequisites on disposable CI host
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql postgresql-contrib iproute2
+          sudo install -d -m 755 /etc/top-delivery
+          sudo install -d -m 755 /var/lib/top-delivery-submission-bundles
+          # Hosted images may leave /opt group-writable for tool installation.
+          # Qualification intentionally rejects that ancestry, so tighten the
+          # disposable runner before exercising the live-shaped socket root.
+          sudo chown root:root /opt
+          sudo chmod go-w /opt
+          sudo install -o root -g root -d -m 700 /opt/horizon-q
+          sudo namei -l /opt/horizon-q
+      - name: Exercise real persistence with simulated model execution
+        run: |
+          # Migration sources are trust anchors and must be root-owned. Keep
+          # the runner checkout intact; stage a private trusted copy on this VM.
+          test ! -e /root/horizon-recovery-ci
+          sudo install -d -m 755 /root/horizon-recovery-ci
+          sudo cp -R --no-preserve=ownership "$GITHUB_WORKSPACE/." /root/horizon-recovery-ci/
+          sudo chmod -R go-w /root/horizon-recovery-ci
+          sudo namei -l /root/horizon-recovery-ci/controller/migrations/versions/004_longspan_workflow.py
+          sudo env PATH="$PATH" HORIZON_TEST_SOCKET_BASE=/opt/horizon-q bash -c 'cd /root/horizon-recovery-ci && exec bash scripts/test-recovery-isolated.sh "$@"' -- -q -ra --tb=short \
+            --basetemp=/tmp/horizon-qualification-intentionally-long-durable-pytest-root-matching-live-artifact-layout-0123456789abcdef0123456789abcdef \
+            tests/test_review_remediation.py \
+            tests/test_comms01_release_deploy.py \
+            tests/test_worker.py \
+            tests/test_worker_cleanup.py \
+            tests/test_worker_integration.py \
+            tests/test_worker_service.py \
+            tests/test_goal_submitter.py \
+            controller/test_recovery_acceptance.py \
+            controller/test_bounded_delivery.py \
+            controller/test_goal_completion.py \
+            controller/test_historical_upgrade.py \
+            controller/test_packaged_qualification.py \
+            tests/test_qualification_runner.py \
+            tests/test_qualification_preparation.py \
+            controller/test_fixture_isolation.py \
+            controller/test_source_delivery.py \
+            controller/test_subworkflow_handoff.py \
+            controller/test_subworkflow_handoff_integration.py \
+            controller/test_correlation_store_integration.py \
+            controller/test_prerequisite_orchestration_integration.py::test_prerequisite_orchestration_detects_delivers_and_is_idempotent \
+            controller/test_prerequisite_orchestration_integration.py::test_missing_gateway_binding_creates_no_provider_state

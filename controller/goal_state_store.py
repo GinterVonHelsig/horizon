@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path
 
 from goal_states import ACTIVE, WAITING_OPERATOR, validate_goal_state
@@ -31,12 +34,36 @@ class GoalStateStore:
         return validate_goal_state(state)
 
     def write(self, run_id: str, state: str) -> None:
+        with self.lock(run_id):
+            self._write_locked(run_id,state)
+
+    @contextmanager
+    def lock(self,run_id):
+        directory=self._path(run_id).parent
+        directory.mkdir(parents=True,exist_ok=True)
+        if any(p.is_symlink() for p in (directory,*directory.parents)):
+            raise ValueError("goal state directory symlink")
+        fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:
+            fcntl.flock(fd,fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+
+    def _write_locked(self,run_id,state):
         validate_goal_state(state)
         path = self._path(run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"run_id": run_id, "state": state}, indent=2, sort_keys=True) + "\n")
+        fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600)
+        with os.fdopen(fd,"w") as stream:
+            stream.write(json.dumps({"run_id": run_id, "state": state}, indent=2, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
         tmp.replace(path)
+        fd=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try: os.fsync(fd)
+        finally: os.close(fd)
 
     def is_paused(self, run_id: str) -> bool:
         return self.read(run_id) in PAUSED_GOAL_STATES

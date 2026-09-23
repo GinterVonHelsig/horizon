@@ -7,6 +7,8 @@ import json
 import logging
 import signal
 import threading
+import os
+import psycopg2
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -31,14 +33,7 @@ from openrouter_budget import OpenRouterBudgetGuard, SilentFallbackError
 from terra_release_policy import ReleasePolicyInput, issue_authoritative_receipt
 from worktree_transport import WorktreeTransport
 from subworkflow_handoff import detect_capability_failure
-
-AUDITOR_SCHEMA = {
-    "type": "object",
-    "properties": {"verdict": {"type": "string", "enum": ["approve", "reject"]}},
-    "required": ["verdict"],
-    "additionalProperties": False,
-}
-
+from auditor_bind import AUDITOR_SCHEMA, normalize_acceptance_criteria, collect_trusted_evidence, bound_auditor_verdict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -94,12 +89,14 @@ class TaskWorker:
         goal_snapshots: dict[str, GoalSnapshot] | None = None,
         transport_owner: str = "top-delivery-worker",
         adapter_config: dict[str, Any] | None = None,
+        routing_policy: dict[str, Any] | None = None,
     ) -> None:
         self._controller = controller
         self._configured_artifact_root = Path(artifact_root).resolve()
         self._artifact_root = self._configured_artifact_root
         self._adapters = adapters
         self._adapter_config = adapter_config
+        self._routing_policy = routing_policy
         self._default_executor = default_executor
         self._default_auditor = default_auditor
         self._cancel_event = cancel_event
@@ -130,16 +127,28 @@ class TaskWorker:
     def run_once(self, run_id: str, owner: str, *, expected_task_id: str | None = None) -> WorkerRunResult | None:
         self._preflight_adapters()
         self._prepare_run_root(run_id)
+        reconcile = getattr(self._controller, "reconcile_goal_graph", None)
+        if callable(reconcile):
+            reconcile(run_id)
         claim_options = {"expected_task_id": expected_task_id} if expected_task_id is not None else {}
         task = self._controller.claim_next(run_id, owner, **claim_options)
         if task is None:
             if expected_task_id is not None:
                 raise PermissionError("expected one-shot task was not claimed")
             return None
-        return self._run_claimed_task(task, owner)
+        result = self._run_claimed_task(task, owner)
+        if callable(reconcile):
+            reconcile(run_id)
+        return result
 
     def run_once_available(self, owner: str) -> WorkerRunResult | None:
         self._preflight_adapters()
+        repo = getattr(self._controller, "_repo", None)
+        reconcile = getattr(self._controller, "reconcile_goal_graph", None)
+        if repo is not None and callable(reconcile):
+            for run_id in repo.list_schedulable_run_ids():
+                self._prepare_run_root(run_id)
+                reconcile(run_id)
         claim = getattr(self._controller, "claim_next_available", None)
         if not callable(claim):
             return None
@@ -147,7 +156,10 @@ class TaskWorker:
         if task is None:
             return None
         self._prepare_run_root(task.run_id)
-        return self._run_claimed_task(task, owner)
+        result = self._run_claimed_task(task, owner)
+        if callable(reconcile):
+            reconcile(task.run_id)
+        return result
 
     def _prepare_run_root(self, run_id: str) -> None:
         dedicated = resolve_run_artifact_root(run_id, self._configured_artifact_root)
@@ -207,6 +219,10 @@ class TaskWorker:
             context: dict[str, Any] | None = None
             try:
                 context = self._task_context(run_id, task)
+                prerequisite_gate = getattr(self._controller, "prepare_prerequisites", None)
+                if callable(prerequisite_gate) and prerequisite_gate(task, context):
+                    cleanup_done = True  # Handoff transaction closed the parent attempt.
+                    return WorkerRunResult(task.task_id, "handoff_waiting")
                 executor_id, auditor_id = self._resolve_routing(context)
                 attempt_dir = self._safe_attempt_dir(run_id, attempt_id)
                 work_dir, writing_lease_owner = self._prepare_attempt_workdir(
@@ -222,6 +238,7 @@ class TaskWorker:
                 )
 
             try:
+                self._refresh_delivery_budget(context)
                 self._authorize_adapter_execution(run_id, executor_id, context)
                 executor_request = self._build_executor_request(
                     task, attempt_id, executor_id, attempt_dir / "executor", context
@@ -233,7 +250,27 @@ class TaskWorker:
                     task, generation, f"configuration_failure:{type(exc).__name__}", context=context,
                 )
             try:
+                # Record intent durably BEFORE externally visible execution.
+                # A lost result cannot authorize a replay of the same logical task.
+                intents = self._artifact_root / "execution-intents"
+                intents.mkdir(mode=0o700, exist_ok=True)
+                intent = self._execution_intent_path(run_id, task.task_id)
+                try:
+                    fd = os.open(intent, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                except FileExistsError:
+                    self._controller.complete_task(run_id, task.task_id, generation, "blocked")
+                    return WorkerRunResult(task.task_id, "blocked:execution_outcome_requires_review")
+                with os.fdopen(fd, "w") as stream:
+                    json.dump({"task_id": task.task_id, "attempt_id": attempt_id, "state": "execution_intent"}, stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                directory_fd = os.open(intents, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
                 executor_result = self._execute_adapter(executor, executor_request)
+                self._validate_execution_identity(executor_id, executor_result)
                 executor_evidence = self._persist_validate_and_record(
                     run_id, task.task_id, attempt_id, fence, "executor", attempt_dir / "executor", executor_result
                 )
@@ -271,6 +308,9 @@ class TaskWorker:
                 return self._handle_adapter_failure(task, generation, executor_result, "executor", context=context)
 
             try:
+                # Recheck actual adapter identities immediately before review.
+                self._refresh_delivery_budget(context)
+                self._resolve_routing(context)
                 self._authorize_adapter_execution(run_id, auditor_id, context)
                 auditor_request = self._build_auditor_request(
                     task, attempt_id, auditor_id, attempt_dir / "auditor", context,
@@ -284,6 +324,7 @@ class TaskWorker:
                 )
             try:
                 auditor_result = self._execute_adapter(auditor, auditor_request)
+                self._validate_execution_identity(auditor_id, auditor_result)
                 self._persist_validate_and_record(
                     run_id, task.task_id, attempt_id, fence, "auditor", attempt_dir / "auditor", auditor_result
                 )
@@ -296,7 +337,19 @@ class TaskWorker:
             except Exception as exc:
                 return self._handle_failure(task, generation, f"child_crash:{type(exc).__name__}", context=context)
 
-            verdict = self._auditor_verdict(auditor_result)
+            verdict = None
+            if context.get("delivery_profile") and self._execution_succeeded(auditor_result):
+                from bounded_delivery import bound_delivery_verdict
+                verdict = bound_delivery_verdict(auditor_result.structured_payload,
+                                                auditor_request.metadata["acceptance_criteria"],
+                                                auditor_request.metadata["trusted_evidence"])
+            elif self._execution_succeeded(auditor_result):
+                verdict = bound_auditor_verdict(
+                    auditor_result.structured_payload,
+                    acceptance=auditor_request.metadata["acceptance_criteria"],
+                    trusted=auditor_request.metadata["trusted_evidence"],
+                    executor_evidence=executor_evidence,
+                )
             if verdict == "approve":
                 if context.get("handoff_id"):
                     complete_handoff = getattr(self._controller, "complete_subworkflow_handoff", None)
@@ -304,6 +357,11 @@ class TaskWorker:
                     if not callable(complete_handoff):
                         return self._handle_failure(task, generation, "configuration_failure:handoff_controller_missing", context=context)
                     try:
+                        if context.get("delivery_profile"):
+                            self._refresh_delivery_budget(context)
+                            product_path = executor.finalize_delivery(
+                                executor_request, executor_result, auditor_result, context.get("review_routing"),
+                            )
                         complete_handoff(
                             run_id=run_id,
                             handoff_id=str(context["handoff_id"]),
@@ -317,6 +375,7 @@ class TaskWorker:
                             task, generation, f"configuration_failure:{type(exc).__name__}", context=context,
                         )
                     cleanup_done = True
+                    context["delivery_completed"] = True
                     self._release_writing_lease(writing_lease_owner)
                     writing_lease_owner = None
                     return WorkerRunResult(task.task_id, "handoff_completed")
@@ -326,18 +385,32 @@ class TaskWorker:
                 self._complete_verified(run_id, task.task_id, generation)
                 return WorkerRunResult(task.task_id, "verified")
             if verdict == "reject":
-                return self._handle_failure(task, generation, "test_failure:auditor-reject", context=context)
+                context["delivery_terminal_reason"] = "auditor_reject"
+                self._controller.complete_task(run_id, task.task_id, generation, "blocked")
+                return WorkerRunResult(task.task_id, "blocked:auditor_reject")
             if self._execution_succeeded(auditor_result):
                 return self._handle_failure(
                     task, generation, "test_failure:malformed_structured_output", context=context,
                 )
             return self._handle_adapter_failure(task, generation, auditor_result, "auditor", context=context)
+        except AdapterPreflightError:
+            # Selected task routes can differ from the defaults checked before
+            # claim. Finalize this lease, then let the poll breaker persist the
+            # configuration block and require an explicit recovery transition.
+            self._controller.complete_task(run_id, task.task_id, generation, "blocked")
+            raise
         finally:
-            self._release_writing_lease(writing_lease_owner)
-            with self._active_lock:
-                self._active_adapter = None
-                self._cancel_forwarded = False
-            cleanup()
+            try:
+                try:
+                    if context and context.get("delivery_profile") and not context.get("delivery_completed"):
+                        self._controller.close_failed_delivery(context["handoff_request"], context.get("delivery_terminal_reason", "provider_failed"))
+                finally:
+                    self._release_writing_lease(writing_lease_owner)
+            finally:
+                with self._active_lock:
+                    self._active_adapter = None
+                    self._cancel_forwarded = False
+                cleanup()
 
     def _complete_verified(self, run_id: str, task_id: str, generation: str) -> None:
         """Commit verified, then retry successor scheduling if the post-commit hook fails."""
@@ -378,6 +451,9 @@ class TaskWorker:
             attempt = 1
         return TaskSnapshot(task_id=task.task_id, path_id=path_id, attempt=attempt)
 
+    def _execution_intent_path(self, run_id: str, task_id: str) -> Path:
+        return self._artifact_root / "execution-intents" / (hashlib.sha256(f"{run_id}:{task_id}".encode()).hexdigest() + ".json")
+
     def _handle_failure(
         self,
         task: Any,
@@ -386,6 +462,8 @@ class TaskWorker:
         *,
         context: dict[str, Any] | None = None,
     ) -> WorkerRunResult:
+        if context and context.get("delivery_profile"):
+            context["delivery_terminal_reason"] = reason
         goal = self._goal_for_run(task.run_id)
         snapshot = self._task_snapshot(task, context)
         decision = self._goal_runner.handle_task_failure(goal, snapshot, reason)
@@ -398,6 +476,12 @@ class TaskWorker:
             self._controller.complete_task(task.run_id, task.task_id, generation, "parked")
             return WorkerRunResult(task.task_id, "parked")
         if decision.task_state == RETRY_QUEUE:
+            # Retryability of a transport error is not proof of no effects.
+            # A durable intent survives processes/attempts; never promise a
+            # queued retry that would either replay effects or hit its guard.
+            if self._execution_intent_path(task.run_id, task.task_id).exists():
+                self._controller.complete_task(task.run_id, task.task_id, generation, "blocked")
+                return WorkerRunResult(task.task_id, "blocked:execution_outcome_requires_review")
             delay = float(decision.retry_delay_seconds or 0)
             self._controller.retry_task(
                 task.run_id, task.task_id, generation, reason, delay=delay,
@@ -421,37 +505,10 @@ class TaskWorker:
     ) -> WorkerRunResult:
         classification = result.error_classification or "process_failure"
         if role == "executor" and classification == "malformed_structured_output":
-            # Fail closed without generic retry_task/complete_task: 014 running-attempt
-            # mutation scope cannot durably terminalize these rows, and that path is
-            # the original defect. Durable exhaust/requeue is 015's job.
-            recover = getattr(self._controller, "recover_executor_contract_failure", None)
-            if not callable(recover):
-                return WorkerRunResult(task.task_id, "failed")
-            expected = getattr(task, "attempt", None)
-            if not isinstance(expected, int) or expected < 1:
-                return WorkerRunResult(task.task_id, "failed")
-            try:
-                payload = recover(
-                    task.run_id,
-                    task.task_id,
-                    generation,
-                    classification,
-                    expected_attempt=expected,
-                    max_retries=5,
-                )
-            except Exception:
-                LOGGER.exception(
-                    "executor-contract recovery failed for task=%s generation=%s",
-                    task.task_id,
-                    generation,
-                )
-                return WorkerRunResult(task.task_id, "failed")
-            reason = payload.get("reason") if isinstance(payload, dict) else None
-            if reason == "exhausted_retry_budget":
-                return WorkerRunResult(task.task_id, "failed")
-            if reason in {"recovered_contract_failure", "already_queued"}:
-                return WorkerRunResult(task.task_id, "retry_queued")
-            return WorkerRunResult(task.task_id, "failed")
+            # A malformed response does not establish whether external effects
+            # happened. Preserve the execution intent and require reconciliation.
+            self._controller.complete_task(task.run_id, task.task_id, generation, "blocked")
+            return WorkerRunResult(task.task_id, "blocked:executor_outcome_requires_review")
         reason = harness_failure_reason(role, classification, retryable=result.retryable)
         return self._handle_failure(task, generation, reason, context=context)
 
@@ -633,13 +690,6 @@ class TaskWorker:
     def _workstream_context(self, run_id: str, task_id: str) -> dict[str, Any]:
         from goal_dependencies import goal_spec_for_task
 
-        spec = goal_spec_for_task(self._artifact_root, run_id, task_id)
-        workstreams = spec.get("workstreams")
-        if not isinstance(workstreams, list):
-            raise WorkerConfigurationError("goal spec workstreams are required")
-        for workstream in workstreams:
-            if isinstance(workstream, dict) and workstream.get("task_id") == task_id:
-                return dict(workstream)
         handoff_root = self._artifact_root / "runs" / run_id / "handoffs"
         if handoff_root.is_dir():
             for request_path in sorted(handoff_root.glob("*/request.json")):
@@ -652,7 +702,12 @@ class TaskWorker:
                 handoff_id = request.get("handoff_id")
                 if not isinstance(handoff_id, str) or not handoff_id:
                     continue
-                return {
+                from subworkflow_handoff import validate_request
+                contract = validate_request(request)
+                validate_durable = getattr(self._controller, "validate_handoff_request", None)
+                if callable(validate_durable):
+                    validate_durable(request)
+                context = {
                     "task_id": task_id,
                     "title": request.get("objective", "capability-provider handoff"),
                     "executor_adapter": request.get("executor_adapter"),
@@ -661,8 +716,9 @@ class TaskWorker:
                     "handoff_id": handoff_id,
                     "handoff_parent_task_id": request.get("parent_task_id"),
                     "handoff_request_path": str(request_path.relative_to(self._artifact_root)),
+                    "handoff_request": request,
                     "acceptance_criteria": [{
-                        "disposition": "PASS_VM9201_DISPOSABLE_SEAM",
+                        "disposition": contract.success_disposition,
                         "product_contract": request.get("product_contract"),
                         "requirement": "write a validated handoff-product.json with role, capability, target, artifact, and rollback proof",
                     }],
@@ -676,9 +732,24 @@ class TaskWorker:
                         "Never emit credentials, private keys, full prompts, responses, or unrestricted commands."
                     ),
                 }
+                profile = request.get("handoff_context", {}).get("delivery_profile")
+                if profile:
+                    context["delivery_profile"] = profile
+                    from bounded_delivery import acceptance_for_spec
+                    context["acceptance_criteria"] = acceptance_for_spec(profile,request["handoff_context"]["delivery_spec_digest"])
+                return context
+        spec = goal_spec_for_task(self._artifact_root, run_id, task_id)
+        workstreams = spec.get("workstreams")
+        if not isinstance(workstreams, list):
+            raise WorkerConfigurationError("goal spec workstreams are required")
+        for workstream in workstreams:
+            if isinstance(workstream, dict) and workstream.get("task_id") == task_id:
+                return dict(workstream)
         raise WorkerConfigurationError("task workstream metadata is required")
 
     def _resolve_routing(self, context: dict[str, Any]) -> tuple[str, str]:
+        if not context.get('delivery_profile') and context.get('qualification_profile') != (self._adapter_config or {}).get('qualification_profile'):
+            raise WorkerConfigurationError('task qualification profile differs from selected worker')
         allowed = {"executor_adapter", "auditor_adapter"}
         route = {key: context.get(key) for key in allowed}
         if not all(isinstance(value, str) and value for value in route.values()):
@@ -689,7 +760,47 @@ class TaskWorker:
             raise WorkerConfigurationError("executor and auditor must be distinct")
         if executor_id not in self._adapters or auditor_id not in self._adapters:
             raise WorkerConfigurationError("route adapter id is not registered")
+        from harness_adapters.identity import adapter_effective_identity, identities_conflict, identity_is_forbidden
+        identities = [adapter_effective_identity(self._adapters[key]) for key in (executor_id, auditor_id)]
+        if any(identity is None or identity_is_forbidden(identity) for identity in identities) or identities_conflict(*identities):
+            raise WorkerConfigurationError("executor and auditor require distinct complete effective identities")
+        if context.get("delivery_profile"):
+            from bounded_delivery import BoundedDeliveryAdapter
+            from model_routing import authorize_delivery_review, load_model_routing
+            from harness_adapters.registry import validate_task_routes
+            if not isinstance(self._adapters[executor_id], BoundedDeliveryAdapter):
+                raise WorkerConfigurationError("delivery profile requires real bounded provider implementation")
+            if self._adapter_config is None:
+                raise WorkerConfigurationError("delivery profile requires explicit adapter configuration")
+            validate_task_routes(self._adapter_config, executor_id, auditor_id)
+            policy = self._routing_policy or load_model_routing(Path(__file__).resolve().parents[1] / "architecture/model-routing.yaml")
+            context["review_routing"] = authorize_delivery_review(policy, identities[0], identities[1],profile=context["delivery_profile"]).to_dict()
+        elif self._routing_policy is not None:
+            from model_routing import authorize_task_review
+            record = authorize_task_review(self._routing_policy, identities[0], identities[1])
+            context["review_routing"] = record.to_dict()
+        if (self._routing_policy is not None or context.get("delivery_profile")) and self._adapter_config is not None:
+            preflight_adapters({**self._adapter_config, "routes": {
+                "default_executor": executor_id, "default_auditor": auditor_id,
+            }}, probe_http=True)
         return executor_id, auditor_id
+
+    def _refresh_delivery_budget(self, context: dict[str, Any]) -> None:
+        if not context.get("delivery_profile"):
+            return
+        remaining = self._controller.validate_handoff_request(context["handoff_request"])
+        if not isinstance(remaining, (float, int)) or isinstance(remaining, bool) or remaining <= 0:
+            raise WorkerConfigurationError("durable delivery time budget unavailable")
+        context["timeout_seconds"] = float(remaining)
+
+    def _validate_execution_identity(self, adapter_id: str, result: HarnessResult) -> None:
+        if self._routing_policy is None and not any(getattr(a, "kind", None) == "gateway_delivery" for a in self._adapters.values()):
+            return  # Dependency-injected legacy/test workers have no phase policy.
+        from harness_adapters.identity import adapter_effective_identity, config_effective_identity
+        expected = adapter_effective_identity(self._adapters[adapter_id])
+        actual = config_effective_identity({"provider": result.provider, "model": result.model})
+        if result.adapter_id != adapter_id or actual != expected:
+            raise EvidenceIntegrityError("executed adapter identity differs from authorized route")
 
     @staticmethod
     def _selected_route(context: dict[str, Any], adapter_id: str) -> bool:
@@ -776,7 +887,9 @@ class TaskWorker:
                 if isinstance(context.get("executor_output_schema"), dict)
                 else EXECUTOR_RESULT_SCHEMA
             ),
-            metadata={"role": "executor", "adapter_id": adapter_id},
+            metadata={"role": "executor", "adapter_id": adapter_id,
+                      **({"handoff_request": context["handoff_request"]} if context.get("handoff_request") else {}),
+                      "acceptance_criteria": normalize_acceptance_criteria(context.get("acceptance_criteria", []))},
         )
 
     def _build_auditor_request(
@@ -784,9 +897,15 @@ class TaskWorker:
         context: dict[str, Any], executor_result: HarnessResult,
         executor_evidence: list[dict[str, str]],
     ) -> HarnessRequest:
-        acceptance = context.get("acceptance_criteria", [])
-        if not isinstance(acceptance, list):
-            raise WorkerConfigurationError("acceptance_criteria must be an array")
+        if context.get("delivery_profile"):
+            context = {**context, "timeout_seconds": min(context["timeout_seconds"], self._adapters[context["executor_adapter"]].remaining_seconds())}
+        acceptance = normalize_acceptance_criteria(context.get("acceptance_criteria", []))
+        if context.get("delivery_profile"):
+            trusted = self._adapters[context["executor_adapter"]].review_evidence(context["cwd"])
+        else:
+            trusted = collect_trusted_evidence(artifact_root=self._artifact_root,
+                role_dir=role_dir.parent / "executor", executor_result=executor_result,
+                executor_evidence=executor_evidence, acceptance=acceptance)
         immutable = {
             "adapter_id": executor_result.adapter_id,
             "model": executor_result.model,
@@ -798,16 +917,32 @@ class TaskWorker:
             "stderr_sha256": executor_result.stderr_sha256,
         }
         structured = executor_result.structured_payload
+        if context.get("delivery_profile"):
+            immutable["artifacts"] = [{"stream": "deliverable", "sha256": trusted["sha256"], "filename": trusted["filename"]}]
         extracted = structured.get("extracted_json") if isinstance(structured, dict) else None
         if isinstance(extracted, dict):
             immutable["executor_extracted_json"] = extracted
         if not acceptance:
             acceptance = [{"disposition": "COMPLETE", "verdict": "PASS"}]
+        evidence_contract = ""
+        if context.get("delivery_profile"):
+            evidence_contract = (
+                "\n\nBOUNDED DELIVERY EVIDENCE CONTRACT\n"
+                "For every criterion, evidence_refs MUST contain exactly one object: "
+                "{\"name\":\"deliverable\",\"sha256\":\""
+                + str(trusted["sha256"]) + "\"}. Use the canonical name deliverable, "
+                "not the filename, specification, stdout, stderr, or any other name. "
+                "The SHA-256 must match the trusted deliverable bytes exactly."
+            )
         prompt = (
             "AUDIT OBJECTIVE\n" + task.objective + "\n\nACCEPTANCE CRITERIA\n" +
             json.dumps(acceptance, sort_keys=True) + "\n\nEXECUTOR EVIDENCE\n" +
             json.dumps(immutable, sort_keys=True) +
-            "\n\nReturn exactly one JSON object matching the verdict schema."
+            "\n\nTRUSTED EVIDENCE\n" + json.dumps(trusted, sort_keys=True) +
+            evidence_contract +
+            "\n\nRead-only review: do not create/edit files or invoke controllers. "
+            "Return exactly one JSON object, no Markdown fences, matching this verdict schema:\n"
+            + json.dumps(AUDITOR_SCHEMA, sort_keys=True)
         )
         return self._base_request(
             task, attempt_id, adapter_id, role_dir, context, prompt=prompt,
@@ -815,6 +950,7 @@ class TaskWorker:
             metadata={
                 "role": "auditor", "adapter_id": adapter_id,
                 "acceptance_criteria": acceptance, "executor_evidence": immutable,
+                "trusted_evidence": trusted,
             },
         )
 
@@ -877,6 +1013,7 @@ class WorkerLoop:
         self, worker: TaskWorker, *, run_id: str | None, owner: str,
         poll_interval: float = 5.0, once: bool = False,
         expected_task_id: str | None = None,
+        health=None,
     ) -> None:
         if expected_task_id is not None and (not once or not run_id):
             raise ValueError("expected task requires one-shot mode and an explicit parent")
@@ -889,6 +1026,8 @@ class WorkerLoop:
         self._stop = False
         self._permission_error_seen = False
         self._permission_error_last_log: dict[str, float] = {}
+        self.health = health
+        self.last_status = "idle"
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
 
@@ -914,7 +1053,17 @@ class WorkerLoop:
         self._worker.cancel_active()
 
     def run(self) -> bool:
+        scope = self._run_id or "available"
         while not self._stop:
+            if self.health is not None:
+                state = self.health.state(scope)
+                if state["blocked"]:
+                    self.last_status = "blocked:" + state["reason"]
+                    return False
+                delay = state["retry_at"] - time.time()
+                if delay > 0:
+                    time.sleep(min(delay, 30))
+                    continue
             try:
                 if self._run_id:
                     options = ({"expected_task_id": self._expected_task_id}
@@ -922,15 +1071,31 @@ class WorkerLoop:
                     result = self._worker.run_once(self._run_id, self._owner, **options)
                 else:
                     result = self._worker.run_once_available(self._owner)
+            except AdapterPreflightError:
+                self.last_status = "blocked:adapter_preflight"
+                if self.health is not None:
+                    self.health.fail(scope, reason="adapter_preflight", permanent=True)
+                return False
             except PermissionError as exc:
                 self._permission_error_seen = True
                 self._log_permission_error(exc)
-                if self._once:
+                self.last_status = "blocked:permission_or_ownership"
+                if self.health is not None:
+                    self.health.fail(scope, reason="permission_or_ownership", permanent=True)
+                return False
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                self.last_status = "blocked:database_unavailable"
+                if self.health is None:
                     return False
-                time.sleep(self._poll_interval)
+                state = self.health.fail(scope, reason="database_unavailable", permanent=False)
+                if state["blocked"] or self._once:
+                    return False
                 continue
+            if self.health is not None:
+                self.health.success(scope)
+            self.last_status = result.terminal_state if result is not None else "idle"
             if self._once:
-                return True
+                return result is None or result.terminal_state in {"verified", "handoff_completed"}
             if result is None and not self._stop:
                 time.sleep(self._poll_interval)
         return not self._permission_error_seen

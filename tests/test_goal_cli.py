@@ -47,7 +47,9 @@ def test_inspect_emits_json_without_database(tmp_path: Path) -> None:
     assert "TOP_DELIVERY_DATABASE_URL" not in result.stdout
 
 
-def test_submit_requires_artifact_root(tmp_path: Path) -> None:
+def test_submit_requires_artifact_root(tmp_path: Path, monkeypatch) -> None:
+    # Worker rebind deliberately exports its root; this case requires absence.
+    monkeypatch.delenv("TOP_DELIVERY_ARTIFACT_ROOT", raising=False)
     prompt = tmp_path / "goal.md"
     prompt.write_text(
         "# Submit me\n\n"

@@ -695,23 +695,17 @@ def test_worker_handoff_lookup_still_works_without_bundle(tmp_path: Path) -> Non
     run_id = "goal-1111111111111111"
     handoff_root = artifact_root / "runs" / run_id / "handoffs" / "handoff-1"
     handoff_root.mkdir(parents=True)
-    request = {
-        "handoff_id": "handoff-1",
-        "provider_task_id": f"{run_id}-provider-1",
-        "parent_task_id": f"{run_id}-ws-01",
-        "objective": "provider seam",
-        "executor_adapter": "executor",
-        "auditor_adapter": "auditor",
-        "timeout_seconds": 120,
-        "product_contract": {"role": "provider"},
-    }
+    from subworkflow_handoff import build_handoff_request
+    request = build_handoff_request(run_id=run_id, parent_task_id=f"{run_id}-ws-01",
+        parent_attempt_id="test-attempt", failure_code="BLOCKED_VM9201_DISPOSABLE_SEAM",
+        request_artifact_root=f"runs/{run_id}/handoffs")
     (handoff_root / "request.json").write_text(json.dumps(request) + "\n")
     (artifact_root / "runs" / run_id / "goal-spec.json").write_text(
         json.dumps({"run_id": run_id, "workstreams": []}) + "\n"
     )
     worker = TaskWorker(MagicMock(), artifact_root, {})  # type: ignore[arg-type]
-    context = worker._workstream_context(run_id, f"{run_id}-provider-1")
-    assert context["handoff_id"] == "handoff-1"
+    context = worker._workstream_context(run_id, request["provider_task_id"])
+    assert context["handoff_id"] == request["handoff_id"]
 
 
 def test_prepare_run_root_tolerates_root_owned_historical_attempt(
@@ -810,7 +804,7 @@ def test_worker_loop_logs_permission_error_without_secret_payload(
     )
 
 
-def test_worker_loop_recovers_after_permission_error(
+def test_worker_loop_stops_after_permanent_permission_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     worker = MagicMock()
@@ -832,8 +826,9 @@ def test_worker_loop_recovers_after_permission_error(
             loop._stop = True
 
     monkeypatch.setattr("worker.time.sleep", _stop_after_recovery)
-    loop.run()
-    assert calls == 2
+    assert loop.run() is False
+    assert calls == 1
+    assert loop.last_status == "blocked:permission_or_ownership"
 
 
 def test_worker_loop_once_reports_failure_after_permission_error() -> None:
@@ -877,9 +872,8 @@ def test_worker_cli_once_exits_nonzero_after_permission_error(
     captured = capsys.readouterr()
     assert exit_code == 1
     payload = json.loads(captured.out.strip())
-    assert payload["status"] == "failed"
-    assert payload["reason"] == "permission_error"
-    assert "blocked" not in captured.out
+    assert payload["status"] == "blocked:permission_or_ownership"
+    assert "blocked" in captured.out
 
 
 def test_goal_cli_durable_existing_parent_uses_runtime_root_for_controller_and_bundle(
@@ -918,6 +912,10 @@ def test_goal_cli_durable_existing_parent_uses_runtime_root_for_controller_and_b
             return None
 
     monkeypatch.setattr("goal_cli.build_controller", FakeDurableController)
+    from test_only.recovery_fakes import route_config
+    adapter_path = tmp_path / "adapters.json"
+    adapter_path.write_text(json.dumps(route_config()))
+    monkeypatch.setenv("TOP_DELIVERY_ADAPTER_CONFIG", str(adapter_path))
     from goal_cli import main
 
     exit_code = main(
@@ -1717,6 +1715,8 @@ def test_expected_task_propagates_worker_and_loop_and_requires_bounded_mode(tmp_
         worker.run_once(PARENT, "worker", expected_task_id=TASKS[0])
     controller.claim_next.assert_called_once_with(PARENT, "worker", expected_task_id=TASKS[0])
     fake = MagicMock()
+    from worker import WorkerRunResult
+    fake.run_once.return_value = WorkerRunResult(TASKS[0], "verified")
     assert WorkerLoop(fake, run_id=PARENT, owner="worker", once=True, expected_task_id=TASKS[0]).run()
     fake.run_once.assert_called_once_with(PARENT, "worker", expected_task_id=TASKS[0])
     fake.run_once_available.assert_not_called()

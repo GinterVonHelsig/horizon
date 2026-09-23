@@ -65,3 +65,5 @@ class LeaseExpiredError(AuthorizationFailureError):
 
 class DependencyScheduleError(ControlPlaneError):
     """Raised when dependency successor scheduling fails after a terminal complete."""
+class MissingLiveMigrationBaselineError(RuntimeError):
+    """Disposable deployment rehearsal lacks the authoritative historical baseline."""

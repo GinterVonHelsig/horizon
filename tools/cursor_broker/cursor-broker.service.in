@@ -1,0 +1,35 @@
+# STAGED TEMPLATE ONLY. Installation is a separate operator-authorized step.
+[Unit]
+Description=TOP-DELIVERY root Cursor route broker for the UID 999 worker
+After=local-fs.target
+StartLimitIntervalSec=300
+StartLimitBurst=1
+
+[Service]
+Type=simple
+User=root
+Group=topdelivery
+ExecStart=/APPROVED/RELEASE/bin/top-delivery-cursor-broker-server --config /etc/top-delivery/cursor-broker.json
+Restart=no
+RestartPreventExitStatus=78
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SETGID CAP_SETUID CAP_SETPCAP
+# systemd's root service identity did not make CAP_SETUID effective from the
+# bounding set alone; this setup-only ambient grant is cleared by the child
+# pre-exec transition before the unprivileged Cursor process is executed.
+AmbientCapabilities=CAP_SETUID
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/APPROVED/RELEASE /etc/top-delivery/cursor-broker.json /opt/operator-harness/homes/.cursor /usr/bin/cursor-agent /opt/operator-harness/bin/cursor-agent
+ReadWritePaths=/run/top-delivery-cursor-broker /var/lib/top-delivery/cursor-broker /var/lib/top-delivery-canary/goal-5b434f0a3d720c89/workspace /var/lib/top-delivery/adapter-runtime/home
+RuntimeDirectory=top-delivery-cursor-broker
+RuntimeDirectoryMode=0750
+StateDirectory=top-delivery/cursor-broker
+StateDirectoryMode=0700
+KillMode=control-group
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

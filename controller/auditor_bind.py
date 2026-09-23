@@ -115,7 +115,10 @@ def collect_trusted_evidence(
         relative = item.get("artifact_path")
         path: Path | None = None
         if isinstance(relative, str) and relative:
-            candidate = (root / relative).resolve()
+            candidate = root / relative
+            if any(part.is_symlink() for part in (candidate, *candidate.parents)):
+                raise ValueError("executor evidence contains a symlink")
+            candidate = candidate.resolve()
             if candidate.is_file() and not candidate.is_symlink() and (
                 candidate.is_relative_to(root) or candidate.is_relative_to(role)
             ):
@@ -127,6 +130,8 @@ def collect_trusted_evidence(
         if path is None or not path.is_file():
             continue
         raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise ValueError("executor evidence changed before independent review")
         snippet = raw[:TRUSTED_SNIPPET_BYTES]
         text = redact_text(snippet.decode("utf-8", "replace"))
         snippets.append(

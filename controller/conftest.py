@@ -4,9 +4,11 @@ import json
 import fcntl
 import os
 import uuid
+import subprocess
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import psycopg2
@@ -49,6 +51,7 @@ from test_only.pinned_trust_session import (
 from test_disposable_helpers import TEST_SIGNING_KEY as _TEST_SIGNING_KEY
 from test_disposable_helpers import TEST_VERIFY_KEY as _TEST_VERIFY_KEY
 from test_role_provision import ensure_test_delivery_roles
+from test_only.isolation import require_isolation
 
 
 ADMIN_URL = os.environ.get(
@@ -322,12 +325,10 @@ def serialize_disposable_trust_state() -> Iterator[None]:
     serialization; it does not weaken the production trust boundary.
     """
 
-    lock_path = Path(
-        os.environ.get(
-            "TOP_DELIVERY_TEST_SESSION_LOCK",
-            "/tmp/top-delivery-controller-test-session.lock",
-        )
-    )
+    # Before even opening a lock or snapshotting pinned files/cluster roles.
+    # A direct pytest invocation must fail, not temporarily mutate host state.
+    require_isolation(ADMIN_URL)
+    lock_path = Path('/tmp/top-delivery-controller-test-session.lock')
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_file = lock_path.open("a+", encoding="utf-8")
     fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
@@ -379,6 +380,8 @@ def install_pinned_trust_anchors(
                     "revision": "008_longspan_authority_repair",
                     "source_digest": "38ec94c702a8f85fd261d3539fd3899cb4955fff428c2282870aca2a13d92101",
                     "legacy_source_digests": {
+                        "017_goal_completion_disposable": "b8fa1755241ac9089ca0c427f8663f77c9b61d025dfa016270b31c3b96d912e2",
+                        "021_goal_completion": "1eb63322b53e1c354b86517f1efa7be9e78acf5670ef0e3dc75d2d1e5d809379",
                         "004_longspan_workflow": "bc01d0a94963dc64d36d1edab9cf2e602f5f96205f33c717b02f553fd3577b32",
                         "005_longspan_hardening": "bd0a4a166b5a59fada29f48a146532f98ac5c7a9f46b301b7dcd1a145bd5401f",
                         "006_longspan_authority": "b6a23a1240fbeb60066bb580ffcd28d5776e41f395ec6256a2cf94ebbff530eb",
@@ -454,11 +457,35 @@ def install_pinned_trust_anchors(
 
 
 @pytest.fixture()
-def db_url() -> Iterator[str]:
+def controller_test_support():
+    # Do not import a bare `conftest` from tests: pytest may also load the sibling
+    # tests/conftest.py under that name, or duplicate signing-key initialization.
+    return SimpleNamespace(
+        ADMIN_URL=ADMIN_URL,
+        install_capability=_install_capability,
+        provision_role_users=_provision_role_users,
+        write_workflow_service_target=_write_workflow_service_target,
+        write_authority_service_target=_write_authority_service_target,
+    )
+
+
+@pytest.fixture()
+def db_url(request) -> Iterator[str]:
     name = f"td_test_{uuid.uuid4().hex}"
     _install_capability(operation="create_database", database_name=name)
     url = create_disposable_database(ADMIN_URL, name)
-    run_migrations(url)
+    try:
+        if getattr(request,"param",None)=="live-stack":
+            from db import alembic_command
+            alembic_command(url,"upgrade","021_goal_completion")
+        else:
+            run_migrations(url)
+    except subprocess.CalledProcessError as exc:
+        from harness_adapters.redaction import redact_text
+        # Report the earliest boundary instead of repeating opaque subprocess
+        # exit codes for every dependent test. Never expose connection secrets.
+        diagnostic = redact_text(str(exc.stderr or exc.output or "migration failed"))
+        raise RuntimeError("disposable migration failed: " + diagnostic[-4096:]) from exc
     workflow_url, authority_url = _provision_role_users(ADMIN_URL, name)
     _write_workflow_service_target(workflow_url, name)
     _write_authority_service_target(authority_url, name)

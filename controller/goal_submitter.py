@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import json
 import os
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -28,6 +30,7 @@ class TaskRoutingSnapshot:
 
     executor_adapter: str
     auditor_adapter: str
+    qualification_profile: str | None = None
 
     def __post_init__(self) -> None:
         if not self.executor_adapter or not self.auditor_adapter:
@@ -87,6 +90,7 @@ class GoalSubmitter:
         *,
         mode: str = "durable",
         task_routing: TaskRoutingSnapshot | None = None,
+        prerequisites: dict[int, list[dict]] | None = None,
     ) -> None:
         if mode not in {"durable", "dry_run"}:
             raise ValueError("mode must be durable or dry_run")
@@ -94,6 +98,7 @@ class GoalSubmitter:
         self._artifact_root = _absolute(Path(artifact_root))
         self._mode = mode
         self._task_routing = task_routing
+        self._prerequisites = json.loads(json.dumps(prerequisites or {}))
         if not self._artifact_root.is_dir():
             raise ValueError("artifact_root must be an existing directory")
 
@@ -103,6 +108,20 @@ class GoalSubmitter:
         *,
         existing_parent: str | None = None,
     ) -> SubmissionReceipt:
+        # Serialize artifact publication and reconciliation across processes.
+        # Lock the trusted directory inode, not a caller-replaceable lock file.
+        fd = _open_directory(self._artifact_root, trusted=os.geteuid() == 0,
+                             allow_root_sticky=True, require_service_read=False)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            return self._submit_locked(prompt_path, existing_parent=existing_parent)
+        finally:
+            os.close(fd)
+
+    def _submit_locked(self, prompt_path: Path, *, existing_parent: str | None) -> SubmissionReceipt:
+        validate = getattr(self._controller, "validate_submission_routing", None)
+        if self._mode == "durable" and callable(validate):
+            validate(self._task_routing)
         parsed = parse_prompt_file(prompt_path)
         if existing_parent is not None:
             self._validate_existing_parent_id(existing_parent)
@@ -122,17 +141,33 @@ class GoalSubmitter:
         # fresh artifacts are made accessible to the service/executor identity.
         # A replay must match this canonical spec or use explicitly pinned recovery.
         spec_bytes = self._goal_spec_bytes(parsed, prompt_bytes.decode("utf-8"))
+        admission=getattr(self._controller,"validate_goal_graph",None)
+        if self._mode=="durable" and callable(admission):
+            admission(json.loads(spec_bytes))
         expected_spec_digest = hashlib.sha256(spec_bytes).hexdigest()
 
         existing = spec_path.exists()
         if existing:
             self._validate_existing_snapshot(spec_path, snapshot_path, parsed)
+            if _read_bytes(spec_path) != spec_bytes:
+                from submission_bundle import SubmissionBundleError
+                raise SubmissionBundleError("existing goal spec differs from reviewed digest of immutable submission content/routing")
             status = "existing"
         else:
             self._write_artifacts(run_dir, snapshot_path, spec_path, prompt_bytes, spec_bytes)
-            if existing_parent is None:
-                self._controller.register_run(parsed.run_id)
             status = "created"
+
+        # Artifacts are not a registration receipt. Reconcile on EVERY retry.
+        ready = True
+        if existing_parent is None:
+            reconcile = getattr(self._controller, "reconcile_submission", None)
+            if callable(reconcile):
+                disposition = reconcile(parsed.run_id)
+                ready = disposition == "ready"
+                if not ready:
+                    status = disposition
+            else:
+                self._controller.register_run(parsed.run_id)
 
         if existing_parent is not None:
             publish_parent_bound_submission_bundle(
@@ -146,8 +181,12 @@ class GoalSubmitter:
                 require_trusted=self._mode == "durable",
             )
 
-        for workstream in root_workstreams(parsed.workstreams):
-            self._schedule_workstream(schedule_run_id, workstream, len(parsed.workstreams))
+        if ready:
+            bind = getattr(self._controller, "bind_goal_graph", None)
+            if self._mode == "durable" and callable(bind):
+                bind(schedule_run_id, json.loads(spec_bytes))
+            for workstream in root_workstreams(parsed.workstreams):
+                self._schedule_workstream(schedule_run_id, workstream, len(parsed.workstreams))
 
         return SubmissionReceipt(
             run_id=schedule_run_id,
@@ -185,12 +224,15 @@ class GoalSubmitter:
                                     create=True, allow_root_sticky=True,
                                     require_service_read=False)
         run_fd = None
+        staging_name = ".submission-" + uuid.uuid4().hex
         try:
+            if run_dir.exists():
+                raise ValueError("submission directory exists without a valid snapshot")
             try:
-                os.mkdir(run_dir.name, mode=0o700, dir_fd=parent_fd)
+                os.mkdir(staging_name, mode=0o700, dir_fd=parent_fd)
             except FileExistsError as exc:
                 raise ValueError("submission directory exists without a valid snapshot") from exc
-            run_fd = os.open(run_dir.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            run_fd = os.open(staging_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                              dir_fd=parent_fd)
             owner = _configured_owner_ids()
             for name, data in ((snapshot_path.name, prompt_bytes), (spec_path.name, spec_bytes)):
@@ -207,6 +249,7 @@ class GoalSubmitter:
             if owner is not None:
                 os.fchown(run_fd, *owner)
             os.fsync(run_fd)
+            os.rename(staging_name, run_dir.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
             os.fsync(parent_fd)
         finally:
             if run_fd is not None:
@@ -229,6 +272,11 @@ class GoalSubmitter:
             ],
             "source": parsed.source,
         }
+        if self._prerequisites:
+            from goal_completion import validate_graph
+            if set(self._prerequisites) - {str(w.number) for w in parsed.workstreams}:
+                raise ValueError("prerequisite workstream does not exist")
+            validate_graph(spec)
         return (json.dumps(spec, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
     def _bound_workstream(self, workstream: object, bound_prompt: str) -> dict[str, object]:
@@ -249,6 +297,10 @@ class GoalSubmitter:
         if self._task_routing is not None:
             payload["executor_adapter"] = self._task_routing.executor_adapter
             payload["auditor_adapter"] = self._task_routing.auditor_adapter
+            if self._task_routing.qualification_profile is not None:
+                payload['qualification_profile'] = self._task_routing.qualification_profile
+        if str(workstream.number) in self._prerequisites:
+            payload["prerequisites"] = self._prerequisites[str(workstream.number)]
         return payload
 
     def _schedule_workstream(

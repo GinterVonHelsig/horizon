@@ -1,7 +1,7 @@
 """Root-held parent-bound authority outside executor-writable runtime trees.
 
 Canonical runtime paths, and services requiring trusted submissions, always use
-TRUSTED_BUNDLES_ROOT. Only the root host gateway/recovery coordinator publishes
+TRUSTED_BUNDLES_ROOT. Only the root Comms Relay host submission/recovery coordinator publishes
 there. Other local roots support disposable/dry-run use without privileged trust.
 """
 

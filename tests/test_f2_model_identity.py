@@ -1,4 +1,4 @@
-"""F2: executor and auditor must differ by effective provider+model, not only adapter id."""
+"""Independent identities cannot be manufactured by switching transport or effort."""
 
 from __future__ import annotations
 
@@ -165,16 +165,25 @@ def test_registry_rejects_variant_suffix_collision_and_meta_router() -> None:
 
 def test_registry_allows_distinct_models() -> None:
     config = _same_identity_registry()
-    config["adapters"][1]["model"] = "openai/gpt-5.6-luna"
+    config["adapters"][1]["model"] = "moonshotai/kimi-k3"
     config["adapters"][1]["provider"] = "openrouter"
     validate_registry_config(config, validate_executables=False)
 
 
-def test_registry_allows_distinct_providers() -> None:
+def test_registry_blocks_distinct_models_in_same_known_family() -> None:
+    config = _same_identity_registry()
+    config["adapters"][1]["model"] = "gpt-6-astra-high"
+    config["adapters"][1]["provider"] = "cursor"
+    with pytest.raises(ValueError, match="distinct effective identities"):
+        validate_registry_config(config, validate_executables=False)
+
+
+def test_registry_blocks_same_model_across_distinct_providers() -> None:
     config = _same_identity_registry()
     config["adapters"][1]["provider"] = "cursor"
     config["adapters"][1]["model"] = "openai/gpt-5.6-sol"
-    validate_registry_config(config, validate_executables=False)
+    with pytest.raises(ValueError, match="distinct effective identities"):
+        validate_registry_config(config, validate_executables=False)
 
 
 def test_worker_blocks_same_provider_model_two_adapter_ids(tmp_path: Path) -> None:
@@ -214,21 +223,28 @@ def test_worker_allows_distinct_model_same_provider(tmp_path: Path) -> None:
     assert result.terminal_state == "verified"
 
 
-def test_worker_allows_distinct_provider_same_model(tmp_path: Path) -> None:
+@pytest.mark.parametrize("writer_model,reviewer_model", [
+    ("shared-model", "shared-model"),
+    ("gpt-6-astra", "openai/gpt-6-astra:nitro"),
+    ("gpt-6-astra", "gpt-5.6-sol-max"),
+])
+def test_worker_blocks_distinct_provider_same_model(tmp_path: Path, writer_model: str, reviewer_model: str) -> None:
     _spec(tmp_path)
     controller = FakeController()
     controller.tasks["task-1"] = FakeTask("task-1", "run-1", "obj", state="scheduled")
     adapters = {
         "executor": IdentifiedAdapter(
-            "executor", [_success_payload()], provider="http-relay", model="shared-model"
+            "executor", [_success_payload()], provider="http-relay", model=writer_model
         ),
         "auditor": IdentifiedAdapter(
-            "auditor", [_success_payload("approve")], provider="cursor-cli", model="shared-model"
+            "auditor", [_success_payload("approve")], provider="cursor-cli", model=reviewer_model
         ),
     }
     result = TaskWorker(controller, tmp_path, adapters).run_once("run-1", "worker")  # type: ignore[arg-type]
     assert result is not None
-    assert result.terminal_state == "verified"
+    assert result.terminal_state == "blocked"
+    assert adapters["executor"].calls == 0
+    assert adapters["auditor"].calls == 0
 
 
 def test_worker_blocks_incomplete_identity_before_execute(tmp_path: Path) -> None:

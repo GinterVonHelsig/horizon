@@ -4,6 +4,8 @@
 *.pem
 *credential*
 *secret*
+!controller/authority_socket_secrets.py
+!controller/comms01_authority_secrets.py
 *token*
 !controller/migrations/versions/*token*.py
 *.log

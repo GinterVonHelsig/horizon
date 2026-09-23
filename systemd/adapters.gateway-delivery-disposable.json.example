@@ -1,0 +1,18 @@
+{
+  "routes": {"default_executor": "gateway-delivery-disposable-file", "default_auditor": "cursor-independent-review"},
+  "adapters": [
+    {
+      "id": "gateway-delivery-disposable-file", "kind": "gateway_delivery", "provider": "cursor", "model": "composer-2.5",
+      "executable": "/usr/bin/cursor-agent", "approval_mode": "never", "credential_env": [],
+      "timeout_seconds": 300, "allowed_cwd_roots": ["/tmp/horizon-disposable-provider"],
+      "subscription_only": true, "on_demand_disabled": true,
+      "delivery_spec": {"profile": "gateway-delivery-disposable-file.v1", "prerequisite_id": "tiny-file",
+                        "filename": "hello.txt", "content": "Hello from Gateway Delivery.\n"}
+    },
+    {
+      "id": "cursor-independent-review", "kind": "cursor_cli", "provider": "cursor", "model": "cursor-grok-4.6-high",
+      "executable": "/usr/bin/cursor-agent", "approval_mode": "never", "cursor_mode": "ask",
+      "credential_env": [], "timeout_seconds": 300, "allowed_cwd_roots": ["/tmp/horizon-disposable-provider"]
+    }
+  ]
+}
