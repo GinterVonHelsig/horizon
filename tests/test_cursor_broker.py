@@ -57,9 +57,13 @@ def fake_launcher(calls: list, config: dict, route: dict, prompt: str) -> dict:
         "stdout_truncated": False, "stderr_truncated": False}
 
 
+def fake_verify_workspace(cfg: dict) -> int:
+    return os.open(cfg["workspace_root"], os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+
+
 def test_no_replay_ledger_redacts_prompt_and_caps_five_slots(tmp_path, monkeypatch):
     cfg = config(tmp_path)
-    monkeypatch.setattr(server, "verify_workspace", lambda _config: None)
+    monkeypatch.setattr(server, "verify_workspace", fake_verify_workspace)
     monkeypatch.setattr(server, "_secure_path", lambda path, **_kwargs: Path(path))
     calls = []
     secret_marker = "SYNTHETIC_PRIVATE_PROMPT_DO_NOT_PERSIST"
@@ -105,7 +109,7 @@ def test_peer_role_route_and_workspace_fail_closed(tmp_path, monkeypatch):
 
 def test_real_socket_client_server_roundtrip_without_model_call(tmp_path, monkeypatch, capfd):
     cfg = config(tmp_path)
-    monkeypatch.setattr(server, "verify_workspace", lambda _config: None)
+    monkeypatch.setattr(server, "verify_workspace", fake_verify_workspace)
     monkeypatch.setattr(server, "_secure_path", lambda path, **_kwargs: Path(path))
     path = tmp_path / "broker.sock"
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -188,7 +192,7 @@ def test_horizon_adapter_forwards_only_bound_broker_identity(tmp_path):
     }
 
 
-def test_real_child_boundary_drops_to_uid999_with_zero_caps_and_nnp(tmp_path):
+def test_real_child_boundary_drops_to_uid999_with_zero_caps_and_nnp(tmp_path, monkeypatch):
     if os.geteuid() != 0:
         pytest.skip("requires root-owned setup capabilities for the UID transition")
     try:
@@ -202,19 +206,41 @@ def test_real_child_boundary_drops_to_uid999_with_zero_caps_and_nnp(tmp_path):
         workspace.mkdir(mode=0o700)
         os.chown(workspace, 999, 989)
         fake = root / "fake-cursor"
-        fake.write_text("#!/usr/bin/python3.13\nimport json,os\ns={x.split(':',1)[0]:x.split(':',1)[1].strip() for x in open('/proc/self/status') if x.startswith(('Uid:','Gid:','CapInh:','CapPrm:','CapEff:','CapBnd:','CapAmb:','NoNewPrivs:'))}\nprint(json.dumps({'uid':os.geteuid(),'cwd':os.getcwd(),'status':s}))\n")
+        fake.write_text("#!/usr/bin/python3.13\nimport json,os\nwith open('child-write-check.txt','x') as f: f.write('uid999')\ns={x.split(':',1)[0]:x.split(':',1)[1].strip() for x in open('/proc/self/status') if x.startswith(('Uid:','Gid:','CapInh:','CapPrm:','CapEff:','CapBnd:','CapAmb:','NoNewPrivs:'))}\nprint(json.dumps({'uid':os.geteuid(),'cwd':os.getcwd(),'write_uid':os.stat('child-write-check.txt').st_uid,'status':s}))\n")
         fake.chmod(0o755)
         cfg = {"executable": str(fake), "workspace_root": str(workspace),
             "child_home": str(workspace), "cursor_home": str(workspace),
-            "child_uid": 999, "child_gid": 989, "max_output_bytes": server.MAX_OUTPUT}
-        result = server._launch(cfg, {"model": "composer-2.5", "mode": "agent", "timeout_seconds": 5},
-                                "deterministic probe only")
+            "child_uid": 999, "child_gid": 989, "workspace_uid": 999,
+            "workspace_dev": workspace.stat().st_dev, "workspace_ino": workspace.stat().st_ino,
+            "max_output_bytes": server.MAX_OUTPUT}
+        real_open = os.open
+        directory_open_flags = []
+
+        def capture_directory_open(path, flags, *args, **kwargs):
+            if flags & os.O_DIRECTORY:
+                directory_open_flags.append(flags)
+            return real_open(path, flags, *args, **kwargs)
+
+        with monkeypatch.context() as patcher:
+            patcher.setattr(server.os, "open", capture_directory_open)
+            workspace_fd = server.verify_workspace(cfg)
+        assert directory_open_flags
+        assert all(flags & os.O_PATH and not flags & os.O_RDONLY for flags in directory_open_flags)
+        try:
+            assert os.fstat(workspace_fd).st_ino == cfg["workspace_ino"]
+            assert os.fstat(workspace_fd).st_uid == 999
+            cfg["_workspace_fd"] = workspace_fd
+            result = server._launch(cfg, {"model": "composer-2.5", "mode": "agent", "timeout_seconds": 5},
+                                    "deterministic probe only")
+        finally:
+            os.close(workspace_fd)
     finally:
         shutil.rmtree(root)
     assert result["outcome"] == "completed"
     assert result["exit_code"] == 0
     payload = json.loads(result["stdout"])
     assert payload["uid"] == 999
+    assert payload["write_uid"] == 999
     assert payload["cwd"] == str(workspace)
     for field in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"):
         assert int(payload["status"][field], 16) == 0

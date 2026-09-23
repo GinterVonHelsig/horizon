@@ -55,16 +55,24 @@ def _secure_path(path: Path, *, private: bool = False, directory: bool = False) 
     return path
 
 
-def verify_workspace(config: dict) -> None:
+def verify_workspace(config: dict) -> int:
+    """Return an O_PATH fd pinned to the validated private workspace inode.
+
+    The broker must not read or list the UID-owned 0700 workspace. The caller
+    owns the returned descriptor and must close it after dispatch (or after
+    startup validation). The executor child receives it only long enough to
+    fchdir after dropping to the workspace owner.
+    """
     path = Path(config["workspace_root"])
     if not path.is_absolute() or ".." in path.parts or len(path.parts) < 2:
         raise ValueError("workspace_path_invalid")
-    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    directory_flags = os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    fd = os.open("/", directory_flags)
     try:
         parts = path.parts[1:]
         for index, part in enumerate(parts):
             final = index == len(parts) - 1
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            child = os.open(part, directory_flags, dir_fd=fd)
             info = os.fstat(child)
             if final:
                 if (info.st_uid != config["workspace_uid"] or info.st_mode & 0o077
@@ -78,10 +86,13 @@ def verify_workspace(config: dict) -> None:
                     raise ValueError("workspace_parent_not_root_controlled")
             os.close(fd)
             fd = child
+        return fd
     except FileNotFoundError as exc:
-        raise ValueError("workspace_not_provisioned") from exc
-    finally:
         os.close(fd)
+        raise ValueError("workspace_not_provisioned") from exc
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def load_config(path: Path) -> dict:
@@ -162,7 +173,7 @@ def _identity(request: dict) -> dict:
     return {key: request[key] for key in ("run_id", "task_id", "attempt_id", "role", "route_id")}
 
 
-def _child_preexec(uid: int, gid: int) -> None:
+def _child_preexec(uid: int, gid: int, workspace_fd: int) -> None:
     # Broker systemd unit grants only SETUID/SETGID/SETPCAP for this transition.
     # Clear ambient and bounding capabilities while SETPCAP is still available;
     # setgroups/setresgid/setresuid then consume the remaining setup authority.
@@ -180,9 +191,15 @@ def _child_preexec(uid: int, gid: int) -> None:
     os.setgroups([])
     os.setresgid(gid, gid, gid)
     os.setresuid(uid, uid, uid)
+    # Enter the pinned inode only after the child owns its 0700 permissions.
+    os.fchdir(workspace_fd)
+    os.close(workspace_fd)
 
 
 def _launch(config: dict, route: dict, prompt: str) -> dict:
+    workspace_fd = config.get("_workspace_fd")
+    if type(workspace_fd) is not int:
+        raise ValueError("workspace_descriptor_missing")
     executable = config["executable"]
     argv = [executable, "-p", prompt, "--output-format", "stream-json", "--model", route["model"]]
     if route["mode"] == "agent":
@@ -192,9 +209,10 @@ def _launch(config: dict, route: dict, prompt: str) -> dict:
     env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": config["child_home"],
         "USER": "topdelivery", "LOGNAME": "topdelivery", "CURSOR_HOME": config["cursor_home"],
         "CURSOR_CONFIG_DIR": config["cursor_home"]}
-    proc = subprocess.Popen(argv, cwd=config["workspace_root"], env=env, stdin=subprocess.DEVNULL,
+    proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, start_new_session=True,
-        preexec_fn=lambda: _child_preexec(config["child_uid"], config["child_gid"]))
+        pass_fds=(workspace_fd,),
+        preexec_fn=lambda: _child_preexec(config["child_uid"], config["child_gid"], workspace_fd))
     started = time.monotonic()
     selector = selectors.DefaultSelector()
     assert proc.stdout is not None and proc.stderr is not None
@@ -275,7 +293,15 @@ def dispatch(config: dict, request: dict, uid: int, *, launcher=_launch) -> dict
     prompt = request["prompt"]
     if not isinstance(prompt, str) or not prompt or len(prompt.encode()) > config["max_request_bytes"] // 2:
         return {"status": "blocked", "reason": "prompt_size_invalid"}
-    verify_workspace(config)
+    workspace_fd = verify_workspace(config)
+    try:
+        return _dispatch_with_workspace(config, request, route, prompt, workspace_fd, launcher=launcher)
+    finally:
+        os.close(workspace_fd)
+
+
+def _dispatch_with_workspace(config: dict, request: dict, route: dict, prompt: str,
+                              workspace_fd: int, *, launcher) -> dict:
     ledger_root = Path(config["ledger_root"])
     run_ledger = ledger_root / config["run_id"]
     run_ledger.mkdir(mode=0o700, exist_ok=True)
@@ -298,7 +324,8 @@ def dispatch(config: dict, request: dict, uid: int, *, launcher=_launch) -> dict
     finally:
         os.close(lock_fd)
     try:
-        result = launcher(config, route, prompt)
+        launch_config = {**config, "_workspace_fd": workspace_fd}
+        result = launcher(launch_config, route, prompt)
         terminal = {**intent, "state": "terminal", "outcome": result["outcome"],
             "exit_code": result["exit_code"], "duration_seconds": result["duration_seconds"],
             "stdout_bytes": result["stdout_bytes"], "stderr_bytes": result["stderr_bytes"],
@@ -334,7 +361,8 @@ def serve(config_path: Path) -> None:
     config = load_config(config_path)
     if os.geteuid() != 0:
         raise ValueError("broker_requires_root_service_identity")
-    verify_workspace(config)
+    workspace_fd = verify_workspace(config)
+    os.close(workspace_fd)
     path = Path(config["socket_path"])
     parent = _secure_path(path.parent, directory=True)
     if os.path.lexists(path):
