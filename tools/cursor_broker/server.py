@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import fcntl
 import hashlib
 import json
@@ -174,6 +175,23 @@ def _atomic(path: Path, value: dict) -> None:
 
 def _identity(request: dict) -> dict:
     return {key: request[key] for key in ("run_id", "task_id", "attempt_id", "role", "route_id")}
+
+
+def _launch_failure_diagnostic(exc: BaseException) -> dict:
+    """Return only bounded, non-sensitive process-boundary diagnostics."""
+    if isinstance(exc, PermissionError):
+        return {"launch_failure_class": "permission_denied", "launch_errno": errno.EACCES}
+    if isinstance(exc, FileNotFoundError):
+        return {"launch_failure_class": "executable_or_path_missing", "launch_errno": errno.ENOENT}
+    if isinstance(exc, subprocess.SubprocessError):
+        return {"launch_failure_class": "child_setup_failed"}
+    if isinstance(exc, OSError):
+        number = exc.errno
+        return {"launch_failure_class": "process_io_error",
+            "launch_errno": number if type(number) is int and 0 <= number < 256 else None}
+    if isinstance(exc, ValueError):
+        return {"launch_failure_class": "launch_configuration_invalid"}
+    return {"launch_failure_class": "launch_outcome_unknown"}
 
 
 def _child_preexec(uid: int, gid: int, workspace_fd: int) -> None:
@@ -353,8 +371,13 @@ def _dispatch_with_workspace(config: dict, request: dict, route: dict, prompt: s
         return {"status": "complete", "exit_code": result["exit_code"] if result["exit_code"] is not None else 78,
             "stdout_b64": base64.b64encode(result["stdout"]).decode(),
             "stderr_b64": base64.b64encode(result["stderr"]).decode()}
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
         # Intent remains durable and consumes one slot. Never retry an uncertain launch.
+        try:
+            _atomic(record_path, {**intent, **_launch_failure_diagnostic(exc)})
+        except OSError:
+            # Keep the original intent if diagnostics cannot be persisted.
+            pass
         return {"status": "blocked", "reason": "launch_outcome_unknown_no_replay"}
 
 

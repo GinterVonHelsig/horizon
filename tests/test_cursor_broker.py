@@ -4,6 +4,7 @@ import json
 import os
 import pwd
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -179,6 +180,36 @@ def test_catalog_client_accepts_only_models_subcommand(monkeypatch, tmp_path):
     assert client.main(["-p", "do something"]) == 78
     assert client.main(["models", "--format", "json"]) == 78
     assert client.main(["models"]) == 78  # Missing route identity/socket is rejected before dispatch.
+
+
+@pytest.mark.parametrize(("failure", "expected_class"), [
+    (PermissionError(13, "secret/path/must/not/persist"), "permission_denied"),
+    (subprocess.SubprocessError("Exception occurred in preexec_fn; private detail"), "child_setup_failed"),
+])
+def test_uncertain_launch_persists_bounded_diagnostic_and_never_replays(tmp_path, monkeypatch, failure, expected_class):
+    cfg = config(tmp_path)
+    monkeypatch.setattr(server, "verify_workspace", fake_verify_workspace)
+    monkeypatch.setattr(server, "_secure_path", lambda path, **_kwargs: Path(path))
+    calls = []
+
+    def failed_launcher(*_args):
+        calls.append("called")
+        raise failure
+
+    first = server.dispatch(cfg, request(cfg, task="uncertain-child"), os.geteuid(), launcher=failed_launcher)
+    assert first == {"status": "blocked", "reason": "launch_outcome_unknown_no_replay"}
+    record_path = next((Path(cfg["ledger_root"]) / cfg["run_id"]).glob("*.json"))
+    record = json.loads(record_path.read_text())
+    assert record["state"] == "intent"
+    assert record["launch_failure_class"] == expected_class
+    assert "launch_errno" not in record or record["launch_errno"] == 13
+    assert "secret/path" not in record_path.read_text()
+    assert "private detail" not in record_path.read_text()
+
+    duplicate = server.dispatch(cfg, request(cfg, task="uncertain-child", attempt="attempt-2"), os.geteuid(),
+        launcher=lambda *_args: pytest.fail("uncertain launch must not replay"))
+    assert duplicate == {"status": "blocked", "reason": "duplicate_no_replay"}
+    assert calls == ["called"]
 
 
 def test_horizon_adapter_forwards_only_bound_broker_identity(tmp_path):
