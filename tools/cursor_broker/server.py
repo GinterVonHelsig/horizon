@@ -184,7 +184,8 @@ def _launch_failure_diagnostic(exc: BaseException) -> dict:
     if isinstance(exc, FileNotFoundError):
         return {"launch_failure_class": "executable_or_path_missing", "launch_errno": errno.ENOENT}
     if isinstance(exc, ChildSetupFailed):
-        return {"launch_failure_class": "child_setup_failed", "launch_failure_stage": exc.stage}
+        return {"launch_failure_class": "child_setup_failed", "launch_failure_stage": exc.stage,
+            "launch_errno": exc.errno_code}
     if isinstance(exc, subprocess.SubprocessError):
         return {"launch_failure_class": "child_setup_failed"}
     if isinstance(exc, OSError):
@@ -197,8 +198,9 @@ def _launch_failure_diagnostic(exc: BaseException) -> dict:
 
 
 class ChildSetupFailed(subprocess.SubprocessError):
-    def __init__(self, stage: str):
+    def __init__(self, stage: str, errno_code: int | None = None):
         self.stage = stage
+        self.errno_code = errno_code
         super().__init__("child_setup_failed")
 
 
@@ -211,7 +213,7 @@ def _child_preexec(uid: int, gid: int, workspace_fd: int, diagnostic_fd: int) ->
     PR_CAPBSET_DROP, PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, PR_SET_NO_NEW_PRIVS = 24, 47, 4, 38
     def fail(stage: str, number: int = errno.EPERM) -> None:
         try:
-            os.write(diagnostic_fd, stage.encode("ascii"))
+            os.write(diagnostic_fd, f"{stage}:{number}".encode("ascii"))
         finally:
             raise OSError(number, "child_setup_failed")
 
@@ -273,10 +275,16 @@ def _launch(config: dict, route: dict, prompt: str) -> dict:
         except subprocess.SubprocessError as exc:
             os.close(diagnostic_write)
             diagnostic_write = -1
-            stage = os.read(diagnostic_read, 64).decode("ascii", errors="ignore")
+            diagnostic = os.read(diagnostic_read, 64).decode("ascii", errors="ignore")
+            parts = diagnostic.split(":", 1)
+            stage = parts[0]
             if stage in {"ambient_clear", "no_new_privs", "cap_limit_read", "capability_drop",
                          "setgroups", "setresgid", "setresuid", "fchdir_workspace"}:
-                raise ChildSetupFailed(stage) from exc
+                try:
+                    number = int(parts[1]) if len(parts) == 2 else None
+                except ValueError:
+                    number = None
+                raise ChildSetupFailed(stage, number) from exc
             raise
         finally:
             if diagnostic_write >= 0:

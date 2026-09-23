@@ -185,7 +185,7 @@ def test_catalog_client_accepts_only_models_subcommand(monkeypatch, tmp_path):
 @pytest.mark.parametrize(("failure", "expected_class"), [
     (PermissionError(13, "secret/path/must/not/persist"), "permission_denied"),
     (subprocess.SubprocessError("Exception occurred in preexec_fn; private detail"), "child_setup_failed"),
-    (server.ChildSetupFailed("setgroups"), "child_setup_failed"),
+    (server.ChildSetupFailed("setgroups", 13), "child_setup_failed"),
 ])
 def test_uncertain_launch_persists_bounded_diagnostic_and_never_replays(tmp_path, monkeypatch, failure, expected_class):
     cfg = config(tmp_path)
@@ -205,6 +205,7 @@ def test_uncertain_launch_persists_bounded_diagnostic_and_never_replays(tmp_path
     assert record["launch_failure_class"] == expected_class
     if isinstance(failure, server.ChildSetupFailed):
         assert record["launch_failure_stage"] == "setgroups"
+        assert record["launch_errno"] == 13
     assert "launch_errno" not in record or record["launch_errno"] == 13
     assert "secret/path" not in record_path.read_text()
     assert "private detail" not in record_path.read_text()
